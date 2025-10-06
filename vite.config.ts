@@ -2,15 +2,14 @@ import { defineConfig } from 'vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// ... импорты
+
 export default defineConfig({
     plugins: [
         sveltekit(),
         VitePWA({
             registerType: 'autoUpdate',
-            // В dev-режиме плагин будет работать, но не будет навязчивым
-            devOptions: {
-                enabled: true 
-            },
+            includeAssets: ['pwa-192x192.png', 'pwa-512x512.png'], // <-- Говорим скопировать иконки
             manifest: {
                 name: 'Учёт сварщиков',
                 short_name: 'Сварщики',
@@ -21,16 +20,8 @@ export default defineConfig({
                 start_url: '/Z_release/',
                 scope: '/Z_release/',
                 icons: [
-                    {
-                        src: 'pwa-192x192.png',
-                        sizes: '192x192',
-                        type: 'image/png'
-                    },
-                    {
-                        src: 'pwa-512x512.png',
-                        sizes: '512x512',
-                        type: 'image/png'
-                    }
+                    { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+                    { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' }
                 ]
             },
             workbox: {
