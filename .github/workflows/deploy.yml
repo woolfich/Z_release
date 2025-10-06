@@ -1,0 +1,49 @@
+# Название нашего рабочего процесса
+name: Build and Deploy
+
+# Запускать при каждом пуше (push) в главную ветку 'main'
+on:
+  push:
+    branches:
+      - main
+
+# Разрешения для этого процесса
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Задачи, которые нужно выполнить
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest # Использовать виртуальную машину с Ubuntu
+
+    steps:
+      # 1. Скачиваем код из репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Устанавливаем Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Или версия, которая у тебя
+
+      # 3. Устанавливаем зависимости (npm ci - быстрая версия npm install)
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. Собираем проект (npm run build)
+      - name: Build application
+        run: npm run build
+
+      # 5. Размещаем собранные файлы на GitHub Pages
+      - name: Upload to GitHub Pages
+        uses: actions/configure-pages@v4
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './build' # Папка, которую мы собрали
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
