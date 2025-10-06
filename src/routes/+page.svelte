@@ -66,15 +66,14 @@
 
     <!-- Список сварщиков -->
     <div class="welder-list">
-        {#each welders as welder (welder.id)}
-            <a href="/welder/{welder.id}" class="welder-item">{welder.name}</a>
-        {/each}
+             {#each welders as welder (welder.id)}
+                <a href="{base}/welder/{welder.id}" class="welder-item">{welder.name}</a>
+            {/each}
     </div>
 
     <!-- Фиксированная кнопка "План" -->
     <div class="bottom-nav">
             <a href="{base}/plan">План</a>
-
     </div>
 </main>
 
