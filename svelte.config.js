@@ -14,14 +14,22 @@ const config = {
             strict: false
         }),
 
-        // --- НАСТРОЙКА ДЛЯ GitHub Pages ---
         paths: {
-            base: process.argv.includes('dev') ? '' : '/Z_release' // <-- ПРАВИЛЬНЫЙ ВАРИАНТ
+            base: process.argv.includes('dev') ? '' : '/Z_release'
         },
-        // --- КОНЕЦ НАСТРОЙКИ ---
 
+        // --- ФИНАЛЬНАЯ ЛОГИКА ДЛЯ PRERENDER ---
         prerender: {
-            handleUnseenRoutes: 'warn'
+            // Эта функция будет вызвана для маршрутов, которые не были найдены краулером
+            handleUnseenRoutes: ({ url}) => {
+                // Если это наш динамический маршрут /welder/[id], просто игнорируем и не прерываем сборку
+                if (url.pathname.startsWith('/welder/')) {
+                    console.warn(`Пропущен динамический маршрут: ${url.pathname}`);
+                    return;
+                }
+                // Для всех остальных не найденных маршрутов - выдаем ошибку
+                throw new Error(`Unexpected ${status} for ${url.pathname}`);
+            }
         }
     }
 };
