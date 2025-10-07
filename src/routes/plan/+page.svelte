@@ -1,22 +1,17 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { base } from '$app/paths'; // ← ЭТА СТРОКА ДОБАВЛЕНА
+    import { base } from '$app/paths';
     import { db, type Plan } from '$lib/db';
 
-
-    // --- Состояние страницы ---
     let plans: Plan[] = [];
     let newArticle = '';
     let newQuantity = '';
 
-    // --- НОВОЕ: Состояние для модального окна ---
     let showPlanModal = false;
     let selectedPlan: Plan | null = null;
     let editArticle = '';
     let editQuantity = '';
-    // --- КОНЕЦ НОВОГО ---
 
-    // --- Функции для работы с планами ---
     async function loadPlans() {
         plans = await db.plans.orderBy('id').reverse().toArray();
     }
@@ -42,15 +37,111 @@
         await loadPlans();
     }
 
-    // --- НОВОЕ: Логика для модального окна ---
+    // --- LONG PRESS IMPLEMENTATION ---
+    const LONG_PRESS_MS = 2000; // 2 секунды
+    const MOVE_CANCEL_PX = 10; // пикселей движения — отмена longpress
 
-    // Функция для обработки долгого нажатия
+    // Храним состояние для каждого pointerId
+    type PressState = {
+        timeoutId: number | null;
+        startX: number;
+        startY: number;
+        triggered: boolean;
+    };
+    const pressStates = new Map<number, PressState>();
+
+    function startPress(e: PointerEvent, plan: Plan) {
+        // only primary buttons (палец или левая кнопка мыши)
+        if ((e instanceof PointerEvent) && e.button && e.button !== 0) return;
+
+        const id = e.pointerId;
+        // начальные координаты
+        const startX = (e as PointerEvent).clientX ?? 0;
+        const startY = (e as PointerEvent).clientY ?? 0;
+
+        // если уже есть state для этого id — очистим
+        if (pressStates.has(id)) {
+            clearPressState(id);
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            // таймер сработал — помечаем и вызываем long-press обработчик
+            const st = pressStates.get(id);
+            if (st) {
+                st.triggered = true;
+            }
+            handlePlanLongPress(plan);
+        }, LONG_PRESS_MS);
+
+        pressStates.set(id, { timeoutId, startX, startY, triggered: false });
+
+        // захватываем указатель, чтобы получать pointermove/pointerup даже если палец ушёл
+        const target = e.target as Element | null;
+        try { target?.setPointerCapture?.(id); } catch (err) { /* ignore */ }
+    }
+
+    function movePress(e: PointerEvent) {
+        const id = e.pointerId;
+        const st = pressStates.get(id);
+        if (!st) return;
+
+        const dx = Math.abs((e.clientX ?? 0) - st.startX);
+        const dy = Math.abs((e.clientY ?? 0) - st.startY);
+        if (dx > MOVE_CANCEL_PX || dy > MOVE_CANCEL_PX) {
+            // Сдвинулся — отменяем долгий тап (плавный свайп/scroll)
+            clearPressState(id);
+        }
+    }
+
+    function endPress(e: PointerEvent) {
+        const id = e.pointerId;
+        const st = pressStates.get(id);
+        if (!st) return;
+
+        // если long-press уже сработал — подавляем "клик" далее (для безопасности)
+        const hadTriggered = st.triggered;
+
+        clearPressState(id);
+
+        // отпустить захват указателя
+        const target = e.target as Element | null;
+        try { target?.releasePointerCapture?.(id); } catch (err) { /* ignore */ }
+
+        // Если long-press сработал — предотвращаем дальнейшие клики
+        // (в большинстве браузеров уже не будет click, но на всякий случай)
+        if (hadTriggered) {
+            // синтетически блокируем краткое последующее событие клика
+            // Поставим флаг на элемент, чтобы игнорировать след. click в capture
+            (e.target as HTMLElement | null)?.addEventListener('click', stopImmediateOnce, { capture: true, once: true });
+        }
+    }
+
+    function cancelPress(e: PointerEvent) {
+        // pointercancel — просто очистим
+        clearPressState(e.pointerId);
+    }
+
+    function clearPressState(pointerId: number) {
+        const st = pressStates.get(pointerId);
+        if (!st) return;
+        if (st.timeoutId != null) {
+            clearTimeout(st.timeoutId);
+        }
+        pressStates.delete(pointerId);
+    }
+
+    function stopImmediateOnce(ev: Event) {
+        ev.stopImmediatePropagation();
+        ev.preventDefault();
+    }
+    // --- END LONG PRESS ---
+
+    // Модалка и действия
     function handlePlanLongPress(plan: Plan) {
         selectedPlan = plan;
         showPlanModal = true;
     }
 
-    // Функции для действий в модальном окне
     function openEditPlan() {
         if (selectedPlan) {
             editArticle = selectedPlan.article;
@@ -99,7 +190,6 @@
         editArticle = '';
         editQuantity = '';
     }
-    // --- КОНЕЦ ЛОГИКИ ---
 
     onMount(() => {
         loadPlans();
@@ -109,7 +199,6 @@
 <main>
     <h1>План работ</h1>
 
-    <!-- Блок для добавления нового плана -->
     <div class="add-plan">
         <input
             type="text"
@@ -131,7 +220,6 @@
         <button on:click={addPlan}>Добавить</button>
     </div>
 
-    <!-- Список планов -->
     <div class="plan-list">
         {#each plans as plan (plan.id)}
             <div
@@ -139,12 +227,10 @@
                 class:completed={plan.quantity > 0 && plan.completed >= plan.quantity}
                 role="button"
                 tabindex="0"
-                on:pointerdown={(e) => handlePlanLongPress(plan)}
-                on:pointerup={(e) => {
-                    // Отменяем стандартное действие, чтобы не было клика
-                    e.preventDefault();
-                }}
-                on:pointercancel={() => {}}
+                on:pointerdown={(e) => startPress(e as PointerEvent, plan)}
+                on:pointermove={(e) => movePress(e as PointerEvent)}
+                on:pointerup={(e) => endPress(e as PointerEvent)}
+                on:pointercancel={(e) => cancelPress(e as PointerEvent)}
                 on:keydown={(e) => e.key === 'Enter' && handlePlanLongPress(plan)}
             >
                 <span class="article">{plan.article}</span>
@@ -154,13 +240,11 @@
         {/each}
     </div>
 
-    <!-- НОВОЕ: Модальное окно для действий с планом -->
     {#if showPlanModal && selectedPlan}
         <div class="modal-overlay" on:click={closePlanModal}>
             <div class="modal-content" on:click|stopPropagation>
                 <h3>Действия с планом: {selectedPlan.article}</h3>
 
-                <!-- Блок для редактирования -->
                 <div class="edit-section">
                     <h4>Редактировать:</h4>
                     <input type="text" placeholder="Артикул" bind:value={editArticle} />
@@ -170,7 +254,6 @@
                     </button>
                 </div>
 
-                <!-- Кнопки быстрых действий -->
                 <div class="modal-actions">
                     <button class="complete-button" on:click={openCompletePlan} disabled={selectedPlan.isUnlimited}>
                         ✅ Отметить выполненным
@@ -184,12 +267,11 @@
         </div>
     {/if}
 
-
-    <!-- Фиксированная кнопка "домой ∆" -->
-<div class="bottom-nav">
-    <a href="{base}/">домой ∆</a>
-</div>
+    <div class="bottom-nav">
+        <a href="{base}/">домой ∆</a>
+    </div>
 </main>
+
 
 <style>
     main {
