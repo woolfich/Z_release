@@ -2,20 +2,12 @@
     import { createEventDispatcher } from 'svelte';
     import type { Record, Plan } from '$lib/db';
 
-       // --- Props ---
+    // --- Props ---
     export let records: Record[] = [];
-    export let allPlans: Plan[] = []; // <-- НОВЫЙ PROP
+    export let allPlans: Plan[] = [];
     // --- Конец Props ---
 
     const dispatch = createEventDispatcher();
-
-    // --- НОВОЕ: Умная функция для определения единицы измерения ---
-    function getUnitForRecord(record: Record): string {
-        const plan = allPlans.find(p => p.article === record.article);
-        // Если план найден и он безлимитный, возвращаем "ч", иначе "шт"
-        return (plan && plan.isUnlimited) ? 'ч' : 'шт';
-    }
-    // --- КОНЕЦ НОВОГО ---
 
     // --- Внутренние функции-помощники ---
     function formatQuantity(num: number): string {
@@ -38,8 +30,45 @@
         return grouped;
     }
 
-    // Реактивно группируем записи при их изменении
     $: groupedRecords = groupRecordsByMonth(records);
+
+    function getUnitForRecord(record: Record): string {
+        const plan = allPlans.find(p => p.article === record.article);
+        return (plan && plan.isUnlimited) ? 'ч' : 'шт';
+    }
+
+    // --- НОВАЯ ЛОГИКА ОБРАБОТКИ КЛИКОВ И ДОЛГОГО НАЖАТИЯ ---
+    let pressTimer: number;
+
+    function handlePointerDown(event: PointerEvent, record: Record) {
+        // Начинаем отсчет долгого нажатия
+        pressTimer = window.setTimeout(() => {
+            // Если за 500мс не было отпускания, считаем это долгим нажатием
+            handleLongPress(record);
+        }, 500);
+    }
+
+    function handlePointerUp(event: PointerEvent, record: Record) {
+        // Отпустили палец/мышь
+        clearTimeout(pressTimer); // Отменяем таймер долгого нажатия
+
+        // Проверяем, что это было короткое нажатие (не было долгого)
+        // и что событие было левой кнопкой мыши или касанием пальца
+        if (event.button === 0 || event.pointerType === 'touch') {
+            // Проверяем, не был ли клик по кнопке-артикулу
+            const target = event.target as HTMLElement;
+            if (target.closest('.article-button')) {
+                handleArticleClick(record.article);
+            }
+        }
+    }
+
+    function handlePointerCancel() {
+        // Если жест прервался (например, пользователь начал скроллить)
+        clearTimeout(pressTimer);
+    }
+    // --- КОНЕЦ НОВОЙ ЛОГИКИ ---
+
 
     // --- Функции для общения с родителем ---
     function handleArticleClick(article: string) {
@@ -62,15 +91,13 @@
                     class="record-item"
                     role="button"
                     tabindex="0"
-                    on:contextmenu|preventDefault={() => handleLongPress(record)}
+                    on:pointerdown={(e) => handlePointerDown(e, record)}
+                    on:pointerup={(e) => handlePointerUp(e, record)}
+                    on:pointercancel={handlePointerCancel}
                     on:keydown={(e) => e.key === 'Enter' && handleLongPress(record)}
-                    on:touchstart|preventDefault
-                    on:touchend|preventDefault
                 >
-                    <button class="article-button" on:click={() => handleArticleClick(record.article)}>
-                        {record.article}
-                    </button>
-                                        <span class="quantity">{formatQuantity(record.quantity)}{getUnitForRecord(record)}</span>
+                    <button class="article-button">{record.article}</button>
+                    <span class="quantity">{formatQuantity(record.quantity)}{getUnitForRecord(record)}</span>
                     <span class="date">{new Date(record.date).toLocaleDateString('ru-RU')}</span>
                 </div>
             {/each}
@@ -104,8 +131,12 @@
         align-items: center;
         padding: 10px;
         border-bottom: 1px solid #eee;
-        user-select: none;
+        /* --- НОВЫЕ СТИЛИ ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ --- */
+        user-select: none; /* Запрещаем выделение текста */
+        -webkit-tap-highlight-color: transparent; /* Убираем стандартную подсветку при тапе */
         outline: none;
+        touch-action: manipulation; /* Отключаем задержку на двойной тап */
+        /* --- КОНЕЦ НОВЫХ СТИЛЕЙ --- */
     }
 
     .record-item:hover, .record-item:focus {
