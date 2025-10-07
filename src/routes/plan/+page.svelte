@@ -1,6 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { base } from '$app/paths'; // ← ЭТА СТРОКА ДОБАВЛЕНА
     import { db, type Plan } from '$lib/db';
+
 
     // --- Состояние страницы ---
     let plans: Plan[] = [];
@@ -184,9 +186,9 @@
 
 
     <!-- Фиксированная кнопка "домой ∆" -->
-    <div class="bottom-nav">
-        <a href="/">домой ∆</a>
-    </div>
+<div class="bottom-nav">
+    <a href="{base}/">домой ∆</a>
+</div>
 </main>
 
 <style>

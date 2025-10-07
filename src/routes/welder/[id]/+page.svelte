@@ -2,7 +2,7 @@
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
     import { db, type Welder, type Plan, type Record } from '$lib/db';
-        import { base } from '$app/paths';
+    import { base } from '$app/paths';
 
     // --- Импортируем наши новые компоненты ---
     import RecordForm from '$lib/components/RecordForm.svelte';
@@ -222,7 +222,7 @@
 
     <!-- Фиксированная кнопка "домой ∆" -->
     <div class="bottom-nav">
-            <a href="{base}">домой ∆</a>
+            <a href="{base}/">домой ∆</a>
 
     </div>
 </main>
