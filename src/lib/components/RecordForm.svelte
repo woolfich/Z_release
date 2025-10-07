@@ -51,7 +51,7 @@
         {#if showSuggestions}
             <div class="suggestions-list">
                 {#each suggestions as suggestion (suggestion.id)}
-                    <button class="suggestion-item" on:click={() => selectSuggestion(suggestion.article)}>
+                    <button class="suggestion-item touch-friendly" on:click={() => selectSuggestion(suggestion.article)}>
                         <span class="suggestion-article">{suggestion.article}</span>
                         <span class="suggestion-info">{suggestion.completed}/{suggestion.quantity}шт</span>
                     </button>
@@ -143,4 +143,9 @@
     button:hover {
         background-color: #777;
     }
+    .touch-friendly {
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+    }
+
 </style>
