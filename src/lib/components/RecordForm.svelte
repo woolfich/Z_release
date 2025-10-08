@@ -14,6 +14,10 @@
     let showSuggestions = false;
     let suggestions: Plan[] = [];
 
+    function formatQuantity(num: number): string {
+        return num.toFixed(2).replace(/\.?0+$/, '');
+    }
+
     $: if (newArticle.trim() !== '') {
         suggestions = activePlans.filter(plan =>
             plan.article.toLowerCase().includes(newArticle.toLowerCase())
@@ -51,10 +55,10 @@
         {#if showSuggestions}
             <div class="suggestions-list">
                 {#each suggestions as suggestion (suggestion.id)}
-                    <button class="suggestion-item touch-friendly" on:click={() => selectSuggestion(suggestion.article)}>
-                        <span class="suggestion-article">{suggestion.article}</span>
-                        <span class="suggestion-info">{suggestion.completed}/{suggestion.quantity}шт</span>
-                    </button>
+                   <button class="suggestion-item" on:click={() => selectSuggestion(suggestion.article)}>
+                       <span class="suggestion-article">{suggestion.article}</span>
+                       <span class="suggestion-info">{formatQuantity(suggestion.completed)}/{formatQuantity(suggestion.quantity)}шт</span>
+                  </button>
                 {/each}
             </div>
         {/if}
