@@ -2,6 +2,10 @@
     import { onMount } from 'svelte';
     import { base } from '$app/paths';
     import { db, type Plan } from '$lib/db';
+// --- НОВОЕ: Функция для красивого отображения чисел ---
+    function formatQuantity(num: number): string {
+        return num.toFixed(2).replace(/\.?0+$/, '');
+    }
 
     let plans: Plan[] = [];
     let newArticle = '';
@@ -234,8 +238,8 @@
                 on:keydown={(e) => e.key === 'Enter' && handlePlanLongPress(plan)}
             >
                 <span class="article">{plan.article}</span>
-                <span class="quantity">{plan.quantity}шт</span>
-                <span class="progress">... {plan.completed}шт</span>
+                <span class="quantity">{formatQuantity(plan.quantity)}шт</span>
+                <span class="progress">... {formatQuantity(plan.completed)}шт</span>
             </div>
         {/each}
     </div>
