@@ -4,96 +4,91 @@
     import { db, type Welder } from '$lib/db';
     import { base } from '$app/paths';
 
-    // Переменная для хранения нового имени из инпута
     let newWelderName = '';
-
-    // Реактивный массив, который будет хранить список сварщиков из БД
     let welders: Welder[] = [];
 
-    // Функция для загрузки сварщиков из базы данных
     async function loadWelders() {
-        // Сортируем по имени для удобства
         welders = await db.welders.orderBy('name').toArray();
     }
 
-    // Функция для добавления нового сварщика
     async function addWelder() {
-        // Не добавляем пустые строки
         if (newWelderName.trim() === '') {
             alert('Введите фамилию!');
             return;
         }
-
-        // Добавляем запись в таблицу 'welders' в нашей БД
-        await db.welders.add({
-            name: newWelderName.trim()
-        });
-
-        // Очищаем инпут
+        await db.welders.add({ name: newWelderName.trim() });
         newWelderName = '';
-
-        // Перезагружаем список, чтобы увидеть изменения
         await loadWelders();
     }
 
-    // onMount - это хук Svelte, который выполняется один раз при загрузке компонента
-    // Идеальное место, чтобы загрузить данные из БД
     onMount(() => {
         loadWelders();
     });
 </script>
 
-<main>
-    <h1>Учёт сварщиков</h1>
-
-    <!-- Блок с добавлением и импортом/экспортом -->
-    <div class="controls">
-        <div class="add-welder">
-            <input
-                type="text"
-                placeholder="Фамилия сварщика"
-                bind:value={newWelderName}
-                on:keydown={(e) => {
-                    if (e.key === 'Enter') addWelder();
-                }}
-            />
-            <button on:click={addWelder}>Добавить</button>
+<!-- Весь экран теперь flex-контейнер -->
+<div class="app-container">
+    <!-- Фиксированный верхний блок -->
+    <header class="main-header">
+        <h1>Учёт сварщиков</h1>
+        <div class="controls">
+            <div class="add-welder">
+                <input
+                    type="text"
+                    placeholder="Фамилия сварщика"
+                    bind:value={newWelderName}
+                    on:keydown={(e) => e.key === 'Enter' && addWelder()}
+                />
+                <button on:click={addWelder}>Добавить</button>
+            </div>
+            <ImportExport />
         </div>
-        <!-- Кнопки Импорт/Экспорт пока просто заглушки -->
-                <!-- Используем наш новый компонент -->
-        <ImportExport />
-    </div>
+    </header>
 
-    <!-- Список сварщиков -->
-    <div class="welder-list">
-             {#each welders as welder (welder.id)}
+    <!-- Основной контент, который занимает всё оставшееся пространство -->
+    <main class="main-content">
+        <div class="welder-list">
+            {#each welders as welder (welder.id)}
                 <a href="{base}/welder/{welder.id}" class="welder-item">{welder.name}</a>
             {/each}
-    </div>
+        </div>
+    </main>
 
-    <!-- Фиксированная кнопка "План" -->
-    <div class="bottom-nav">
-            <a href="{base}/plan">План</a>
-    </div>
-</main>
+    <!-- Фиксированный нижний блок -->
+    <footer class="main-footer">
+        <a href="{base}/plan">План</a>
+    </footer>
+</div>
 
 <style>
-    main {
-        font-family: sans-serif;
-        text-align: center;
-        padding: 1em;
+    .app-container {
+        display: flex;
+        flex-direction: column;
+        height: 100vh; /* Занимаем всю высоту экрана */
         max-width: 600px;
         margin: 0 auto;
-        color: #333; /* Серо-стальной базовый цвет */
+        font-family: sans-serif;
+        color: #333;
+    }
+
+    .main-header {
+        flex-shrink: 0; /* Не сжимается */
+        padding: 1em;
+        border-bottom: 1px solid #eee;
+        background-color: #fafafa;
+    }
+
+    .main-header h1 {
+        margin: 0 0 0.5em 0;
+        color: #444;
     }
 
     .controls {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 1em;
-        flex-wrap: wrap;
         gap: 10px;
+        flex-wrap: wrap;
     }
 
     .add-welder {
@@ -121,13 +116,14 @@
         background-color: #777;
     }
 
-    button:disabled {
-        background-color: #ccc;
-        cursor: not-allowed;
+    /* --- Стили для основного контента --- */
+    .main-content {
+        flex-grow: 1; /* Занимает всё доступное пространство */
+        overflow-y: auto; /* Включаем скролл только для этого блока */
+        padding: 1em;
     }
 
     .welder-list {
-        margin-top: 2em;
         display: flex;
         flex-direction: column;
         gap: 10px;
@@ -149,18 +145,16 @@
         transform: translateY(-2px);
     }
 
-    .bottom-nav {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
+    /* --- Стили для нижнего блока --- */
+    .main-footer {
+        flex-shrink: 0; /* Не сжимается */
         background-color: #444;
         padding: 1em;
         text-align: center;
-        box-sizing: border-box; /* Чтобы padding не влиял на ширину */
+        box-sizing: border-box;
     }
 
-    .bottom-nav a {
+    .main-footer a {
         color: white;
         text-decoration: none;
         font-weight: bold;
@@ -168,9 +162,10 @@
         border-radius: 5px;
         background-color: #555;
         transition: background-color 0.2s;
+        display: inline-block;
     }
 
-    .bottom-nav a:hover {
+    .main-footer a:hover {
         background-color: #666;
     }
 </style>
