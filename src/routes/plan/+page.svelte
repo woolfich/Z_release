@@ -1,8 +1,14 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { base } from '$app/paths';
-    import { db, type Plan } from '$lib/db';
-// --- НОВОЕ: Функция для красивого отображения чисел ---
+    import { db, type Plan, type Norm } from '$lib/db'; // <-- ДОБАВИЛИ type Norm
+
+    // --- НОВОЕ: Логика для подсказок ---
+    let allNorms: Norm[] = [];
+    let showSuggestions = false;
+    let suggestions: Norm[] = [];
+    // --- КОНЕЦ НОВОГО ---
+
     function formatQuantity(num: number): string {
         return num.toFixed(2).replace(/\.?0+$/, '');
     }
@@ -19,6 +25,12 @@
     async function loadPlans() {
         plans = await db.plans.orderBy('id').reverse().toArray();
     }
+
+    // --- НОВОЕ: Функция загрузки норм ---
+    async function loadNorms() {
+        allNorms = await db.norms.orderBy('article').toArray();
+    }
+    // --- КОНЕЦ НОВОЕ ---
 
     async function addPlan() {
         const quantity = parseInt(newQuantity, 10);
@@ -41,103 +53,54 @@
         await loadPlans();
     }
 
-    // --- LONG PRESS IMPLEMENTATION ---
-    const LONG_PRESS_MS = 2000; // 2 секунды
-    const MOVE_CANCEL_PX = 10; // пикселей движения — отмена longpress
-
-    // Храним состояние для каждого pointerId
-    type PressState = {
-        timeoutId: number | null;
-        startX: number;
-        startY: number;
-        triggered: boolean;
-    };
+    // --- LONG PRESS IMPLEMENTATION (без изменений) ---
+    const LONG_PRESS_MS = 2000;
+    const MOVE_CANCEL_PX = 10;
+    type PressState = { timeoutId: number | null; startX: number; startY: number; triggered: boolean; };
     const pressStates = new Map<number, PressState>();
 
     function startPress(e: PointerEvent, plan: Plan) {
-        // only primary buttons (палец или левая кнопка мыши)
         if ((e instanceof PointerEvent) && e.button && e.button !== 0) return;
-
         const id = e.pointerId;
-        // начальные координаты
         const startX = (e as PointerEvent).clientX ?? 0;
         const startY = (e as PointerEvent).clientY ?? 0;
-
-        // если уже есть state для этого id — очистим
-        if (pressStates.has(id)) {
-            clearPressState(id);
-        }
-
+        if (pressStates.has(id)) { clearPressState(id); }
         const timeoutId = window.setTimeout(() => {
-            // таймер сработал — помечаем и вызываем long-press обработчик
-            const st = pressStates.get(id);
-            if (st) {
-                st.triggered = true;
-            }
-            handlePlanLongPress(plan);
+            const st = pressStates.get(id); if (st) { st.triggered = true; } handlePlanLongPress(plan);
         }, LONG_PRESS_MS);
-
         pressStates.set(id, { timeoutId, startX, startY, triggered: false });
-
-        // захватываем указатель, чтобы получать pointermove/pointerup даже если палец ушёл
         const target = e.target as Element | null;
         try { target?.setPointerCapture?.(id); } catch (err) { /* ignore */ }
     }
 
     function movePress(e: PointerEvent) {
-        const id = e.pointerId;
-        const st = pressStates.get(id);
+        const id = e.pointerId; const st = pressStates.get(id);
         if (!st) return;
-
         const dx = Math.abs((e.clientX ?? 0) - st.startX);
         const dy = Math.abs((e.clientY ?? 0) - st.startY);
-        if (dx > MOVE_CANCEL_PX || dy > MOVE_CANCEL_PX) {
-            // Сдвинулся — отменяем долгий тап (плавный свайп/scroll)
-            clearPressState(id);
-        }
+        if (dx > MOVE_CANCEL_PX || dy > MOVE_CANCEL_PX) { clearPressState(id); }
     }
 
     function endPress(e: PointerEvent) {
-        const id = e.pointerId;
-        const st = pressStates.get(id);
+        const id = e.pointerId; const st = pressStates.get(id);
         if (!st) return;
-
-        // если long-press уже сработал — подавляем "клик" далее (для безопасности)
         const hadTriggered = st.triggered;
-
         clearPressState(id);
-
-        // отпустить захват указателя
         const target = e.target as Element | null;
         try { target?.releasePointerCapture?.(id); } catch (err) { /* ignore */ }
-
-        // Если long-press сработал — предотвращаем дальнейшие клики
-        // (в большинстве браузеров уже не будет click, но на всякий случай)
         if (hadTriggered) {
-            // синтетически блокируем краткое последующее событие клика
-            // Поставим флаг на элемент, чтобы игнорировать след. click в capture
             (e.target as HTMLElement | null)?.addEventListener('click', stopImmediateOnce, { capture: true, once: true });
         }
     }
 
-    function cancelPress(e: PointerEvent) {
-        // pointercancel — просто очистим
-        clearPressState(e.pointerId);
-    }
-
+    function cancelPress(e: PointerEvent) { clearPressState(e.pointerId); }
     function clearPressState(pointerId: number) {
         const st = pressStates.get(pointerId);
         if (!st) return;
-        if (st.timeoutId != null) {
-            clearTimeout(st.timeoutId);
-        }
+        if (st.timeoutId != null) { clearTimeout(st.timeoutId); }
         pressStates.delete(pointerId);
     }
-
-    function stopImmediateOnce(ev: Event) {
-        ev.stopImmediatePropagation();
-        ev.preventDefault();
-    }
+    function stopImmediateOnce(ev: Event) { ev.stopImmediatePropagation(); ev.preventDefault(); }
     // --- END LONG PRESS ---
 
     // Модалка и действия
@@ -159,7 +122,7 @@
                 savePlanChanges({ completed: selectedPlan.quantity });
             }
         } else {
-            alert("Безлимитный план нельзя отметить как выполненный.");
+            alert("Безлимитный план нельзя отметить как выполненным.");
         }
     }
 
@@ -195,8 +158,27 @@
         editQuantity = '';
     }
 
+    // --- НОВОЕ: Реактивная логика для подсказок ---
+    $: if (newArticle.trim() !== '') {
+        suggestions = allNorms.filter(norm =>
+            norm.article.toLowerCase().includes(newArticle.toLowerCase())
+        );
+        showSuggestions = suggestions.length > 0;
+    } else {
+        suggestions = [];
+        showSuggestions = false;
+    }
+
+    function selectSuggestion(article: string) {
+        newArticle = article;
+        showSuggestions = false;
+        document.getElementById('quantity-input')?.focus();
+    }
+    // --- КОНЕЦ НОВОГО ---
+
     onMount(() => {
         loadPlans();
+        loadNorms(); // <-- НОВОЕ: Загружаем нормы при монтировании
     });
 </script>
 
@@ -204,16 +186,27 @@
     <h1>План работ</h1>
 
     <div class="add-plan">
-        <input
-            type="text"
-            placeholder="Артикул"
-            bind:value={newArticle}
-            on:keydown={(e) => {
-                if (e.key === 'Enter') {
-                    document.getElementById('quantity-input')?.focus();
-                }
-            }}
-        />
+        <!-- НОВОЕ: Оборачиваем инпут в контейнер для подсказок -->
+        <div class="input-with-suggestions">
+            <input
+                type="text"
+                placeholder="Артикул"
+                bind:value={newArticle}
+                on:focus={() => showSuggestions = newArticle.trim() !== ''}
+            />
+            {#if showSuggestions}
+                <div class="suggestions-list">
+                    {#each suggestions as suggestion (suggestion.id)}
+                       <button class="suggestion-item" on:click={() => selectSuggestion(suggestion.article)}>
+                           <span class="suggestion-article">{suggestion.article}</span>
+                           <span class="suggestion-info">{suggestion.time}ч</span>
+                      </button>
+                    {/each}
+                </div>
+            {/if}
+        </div>
+        <!-- КОНЕЦ НОВОГО -->
+
         <input
             id="quantity-input"
             type="number"
@@ -276,7 +269,6 @@
     </div>
 </main>
 
-
 <style>
     main {
         font-family: sans-serif;
@@ -337,12 +329,10 @@
         border: 1px solid #ddd;
         border-radius: 5px;
         transition: border-color 0.3s, background-color 0.3s;
-        /* --- НОВЫЕ СТИЛИ ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ --- */
         user-select: none;
         -webkit-tap-highlight-color: transparent;
         outline: none;
         touch-action: manipulation;
-        /* --- КОНЕЦ НОВЫХ СТИЛЕЙ --- */
     }
 
     .plan-item:hover, .plan-item:focus {
@@ -392,7 +382,53 @@
         background-color: #666;
     }
 
-    /* --- НОВЫЕ СТИЛИ ДЛЯ МОДАЛЬНОГО ОКНА --- */
+    /* --- НОВЫЕ СТИЛИ ДЛЯ ПОДСКАЗОК --- */
+    .input-with-suggestions {
+        position: relative;
+    }
+
+    .suggestions-list {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background-color: white;
+        border: 1px solid #ccc;
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        max-height: 150px;
+        overflow-y: auto;
+        z-index: 10;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .suggestion-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px;
+        cursor: pointer;
+        width: 100%;
+        background: none;
+        border: none;
+        text-align: left;
+    }
+
+    .suggestion-item:hover {
+        background-color: #f0f0f0;
+    }
+
+    .suggestion-article {
+        font-weight: bold;
+        color: #333;
+    }
+
+    .suggestion-info {
+        color: #888;
+        font-size: 0.9em;
+    }
+    /* --- КОНЕЦ НОВЫХ СТИЛЕЙ --- */
+
+    /* --- Стили для модального окна (без изменений) --- */
     .modal-overlay {
         position: fixed;
         top: 0;
