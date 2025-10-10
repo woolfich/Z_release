@@ -483,21 +483,29 @@ onMount(() => {
 </main>
 
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,400;0,500;0,700;1,400&display=swap');
+
 main {
-	font-family: sans-serif;
+	font-family: 'Roboto', sans-serif;
 	text-align: center;
-	padding: 1em;
-	max-width: 600px;
+	padding: 2em 1em;
+	max-width: 800px;
 	margin: 0 auto;
-	color: #333;
-	padding-bottom: 80px;
+	color: #2c3e50;
+	background-color: #f9fafb;
+	border-radius: 12px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+	padding-bottom: 100px; /* Increased for better spacing with fixed nav */
 }
 
 h1 {
-	color: #444;
-	border-bottom: 2px solid #eee;
-	padding-bottom: 10px;
-	margin-bottom: 20px;
+	color: #34495e;
+	font-weight: 700;
+	font-size: 1.8em;
+	border-bottom: 2px solid #ecf0f1;
+	padding-bottom: 15px;
+	margin-bottom: 30px;
+	letter-spacing: 0.5px;
 }
 
 .bottom-nav {
@@ -505,23 +513,77 @@ h1 {
 	bottom: 0;
 	left: 0;
 	width: 100%;
-	background-color: #444;
-	padding: 1em;
+	background-color: #3498db;
+	padding: 1.2em;
 	text-align: center;
 	box-sizing: border-box;
+	box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+	z-index: 1000;
 }
 
 .bottom-nav a {
-	color: white;
+	color: #ffffff;
 	text-decoration: none;
-	font-weight: bold;
-	padding: 10px 20px;
-	border-radius: 5px;
-	background-color: #555;
-	transition: background-color 0.2s;
+	font-weight: 500;
+	font-size: 1.1em;
+	padding: 12px 28px;
+	border-radius: 8px;
+	background-color: #2980b9;
+	transition: background-color 0.3s ease, transform 0.2s ease;
 }
 
 .bottom-nav a:hover {
-	background-color: #666;
+	background-color: #2574a9;
+	transform: translateY(-2px);
+}
+
+/* Additional styles for readability and modern feel */
+:global(body) {
+	background-color: #ecf0f1;
+	font-family: 'Roboto', sans-serif;
+}
+
+:global(input, button, select) {
+	font-family: 'Roboto', sans-serif;
+	border-radius: 6px;
+	border: 1px solid #bdc3c7;
+	padding: 10px;
+	font-size: 1em;
+	transition: border-color 0.2s;
+}
+
+:global(input:focus, button:focus, select:focus) {
+	border-color: #3498db;
+	outline: none;
+}
+
+:global(button) {
+	background-color: #3498db;
+	color: white;
+	border: none;
+	cursor: pointer;
+	transition: background-color 0.3s;
+}
+
+:global(button:hover) {
+	background-color: #2980b9;
+}
+
+/* Assuming RecordList has class .record-entry for entries */
+:global(.record-entry) {
+	font-family: 'Roboto', sans-serif;
+	font-size: 1.1em;
+	font-style: italic; /* For a 'beautiful' touch, or remove if not desired */
+	color: #34495e;
+	padding: 12px;
+	background-color: #ffffff;
+	border-radius: 8px;
+	margin-bottom: 12px;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+	transition: box-shadow 0.2s;
+}
+
+:global(.record-entry:hover) {
+	box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
 }
 </style>
