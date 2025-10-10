@@ -1,195 +1,280 @@
 <script lang="ts">
-    import { db, type Welder, type Plan, type Record } from '$lib/db';
+    import { db, type Welder, type Plan, type Norm, type Record as DbRecord, type DailyAllocation } from '$lib/db';
+    import { base } from '$app/paths';
+    import { onMount } from 'svelte';
 
-    // --- Функция экспорта данных (остаётся без изменений) ---
-    async function handleExport() {
+    let isExporting = false;
+    let isImporting = false;
+    let importStatus = '';
+    let exportStatus = '';
+
+    // Проверяем, есть ли данные в базе
+    async function hasData(): Promise<boolean> {
+        const weldersCount = await db.welders.count();
+        const plansCount = await db.plans.count();
+        const normsCount = await db.norms.count();
+        const recordsCount = await db.records.count();
+        const dailiesCount = await db.dailies.count();
+        
+        return weldersCount > 0 || plansCount > 0 || normsCount > 0 || recordsCount > 0 || dailiesCount > 0;
+    }
+
+    // Экспорт всех данных в JSON
+    async function exportAllData() {
+        isExporting = true;
+        exportStatus = 'Сбор данных...';
+        
         try {
+            // Собираем все данные из всех таблиц
             const welders = await db.welders.toArray();
             const plans = await db.plans.toArray();
+            const norms = await db.norms.toArray();
             const records = await db.records.toArray();
-
+            const dailies = await db.dailies.toArray();
+            
+            exportStatus = 'Формирование файла...';
+            
+            // Создаем объект с данными и метаданными
             const exportData = {
                 version: '1.0',
                 exportDate: new Date().toISOString(),
-                data: { welders, plans, records }
+                data: {
+                    welders,
+                    plans,
+                    norms,
+                    records,
+                    dailies
+                }
             };
-
-            const jsonString = JSON.stringify(exportData, null, 2);
-            const blob = new Blob([jsonString], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const today = new Date().toISOString().split('T')[0];
-            a.download = `welding_data_${today}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            alert('Данные успешно экспортированы!');
+            
+            // Создаем и скачиваем JSON-файл
+            const dataStr = JSON.stringify(exportData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(dataBlob);
+            link.download = `welders_data_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            exportStatus = 'Экспорт завершен!';
+            setTimeout(() => { exportStatus = ''; }, 3000);
         } catch (error) {
             console.error('Ошибка при экспорте:', error);
-            alert('Произошла ошибка при экспорте данных. Подробности в консоли (F12).');
+            exportStatus = 'Ошибка экспорта!';
+            setTimeout(() => { exportStatus = ''; }, 3000);
+        } finally {
+            isExporting = false;
         }
-        console.log('>>> Начинаем диагностику таблицы records...');
-            const records_via_toArray = await db.records.toArray();
-            const records_via_query = await db.records.where('id').above(0).toArray(); // Простой запрос, который должен получить всё
-
-            console.log('>>> Результат db.records.toArray():', records_via_toArray);
-            console.log('>>> Результат db.records.where(...).toArray():', records_via_query);
-            console.log('>>> Результаты одинаковы?', JSON.stringify(records_via_toArray) === JSON.stringify(records_via_query));
-            // --- КОНЕЦ ТЕСТА ---
-
-            const records = records_via_toArray; // Используем результат toArray для экспорта
     }
 
-    // --- НОВОЕ: Полная логика импорта ---
-    let fileInput: HTMLInputElement;
-
-    function triggerImport() {
-        fileInput.click();
-    }
-
-    async function handleFileSelect(event: Event) {
-        const target = event.target as HTMLInputElement;
-        const file = target.files?.[0];
+    // Импорт данных из JSON
+    async function importAllData(event: Event) {
+        const file = (event.target as HTMLInputElement).files?.[0];
         if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const jsonString = e.target?.result as string;
-                const importData = JSON.parse(jsonString);
-
-                if (!importData.data) {
-                    throw new Error('Неверный формат файла: отсутствует секция data.');
-                }
-
-                // Начинаем транзакцию для атомарности
-                await db.transaction('rw', db.welders, db.plans, db.records, async () => {
-                    // --- 1. Импорт сварщиков ---
-                    const welderNameToIdMap = new Map<string, number>();
-                    const existingWelders = await db.welders.toArray();
-                    existingWelders.forEach(w => welderNameToIdMap.set(w.name, w.id!));
-
-                    let addedWelders = 0;
-                    for (const welder of importData.data.welders) {
-                        if (!welderNameToIdMap.has(welder.name)) {
-                            const id = await db.welders.add(welder);
-                            welderNameToIdMap.set(welder.name, id);
-                            addedWelders++;
-                        }
-                    }
-
-                    // --- 2. Импорт планов ---
-                    const planArticleToIdMap = new Map<string, number>();
-                    const existingPlans = await db.plans.toArray();
-                    existingPlans.forEach(p => planArticleToIdMap.set(p.article, p.id!));
-
-                    let addedPlans = 0;
-                    for (const plan of importData.data.plans) {
-                        if (!planArticleToIdMap.has(plan.article)) {
-                            const id = await db.plans.add(plan);
-                            planArticleToIdMap.set(plan.article, id);
-                            addedPlans++;
-                        }
-                    }
-
-                    // --- 3. Импорт записей (самая важная часть) ---
-                    let addedRecords = 0;
-                    for (const record of importData.data.records) {
-                        const welderId = welderNameToIdMap.get(record.welderName); // В файле мы ищем по имени
-                        const planId = planArticleToIdMap.get(record.article);
-
-                        // Импортируем запись, только если найдены и сварщик, и план
-                        if (welderId && planId) {
-                            await db.records.add({
-                                ...record, // Копируем все поля (quantity, date, history)
-                                welderId,  // Заменяем ID на наш, локальный
-                            });
-                            addedRecords++;
-                        }
-                    }
-                    
-                                        // Обновляем прогресс в планах после импорта всех записей
-                    const allPlans = await db.plans.toArray();
-                    for(const plan of allPlans) {
-                        // ИЗМЕНЕНИЕ: Считаем сумму более надежным способом
-                        const recordsForPlan = await db.records.where('article').equals(plan.article).toArray();
-                        const totalCompleted = recordsForPlan.reduce((sum, record) => sum + record.quantity, 0);
-                        await db.plans.update(plan.id!, { completed: totalCompleted });
-                    }
-
-                    alert(`Импорт завершен!\n\nДобавлено:\n- Сварщиков: ${addedWelders}\n- Планов: ${addedPlans}\n- Записей: ${addedRecords}`);
-                });
-
-            } catch (error) {
-                console.error('Ошибка при импорте:', error);
-                alert(`Ошибка при импорте файла: ${error instanceof Error ? error.message : String(error)}`);
-            } finally {
-                // Сбрасываем значение input, чтобы можно было выбрать тот же файл снова
-                target.value = '';
+        
+        isImporting = true;
+        importStatus = 'Чтение файла...';
+        
+        try {
+            const fileContent = await file.text();
+            const importData = JSON.parse(fileContent);
+            
+            // Проверяем структуру импортируемых данных
+            if (!importData.data || !importData.version) {
+                throw new Error('Неверный формат файла импорта');
             }
-        };
-
-        reader.onerror = () => {
-            alert('Не удалось прочитать файл.');
-        };
-
-        reader.readAsText(file);
+            
+            // Проверяем, есть ли данные в базе
+            const hasExistingData = await hasData();
+            
+            // Если есть данные, создаем бэкап
+            if (hasExistingData) {
+                importStatus = 'Создание бэкапа...';
+                // Вызываем экспорт, но без перезагрузки страницы
+                const welders = await db.welders.toArray();
+                const plans = await db.plans.toArray();
+                const norms = await db.norms.toArray();
+                const records = await db.records.toArray();
+                const dailies = await db.dailies.toArray();
+                const backupData = {
+                    version: '1.0',
+                    exportDate: new Date().toISOString(),
+                    data: { welders, plans, norms, records, dailies }
+                };
+                const dataStr = JSON.stringify(backupData, null, 2);
+                const dataBlob = new Blob([dataStr], { type: 'application/json' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(dataBlob);
+                link.download = `backup_welders_data_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+            
+            importStatus = 'Очистка базы данных...';
+            
+            // Очищаем все таблицы
+            await db.transaction('rw', [db.welders, db.plans, db.norms, db.records, db.dailies], async () => {
+                await db.welders.clear();
+                await db.plans.clear();
+                await db.norms.clear();
+                await db.records.clear();
+                await db.dailies.clear();
+            });
+            
+            importStatus = 'Импорт данных...';
+            
+            // Импортируем данные
+            await db.transaction('rw', [db.welders, db.plans, db.norms, db.records, db.dailies], async () => {
+                if (importData.data.welders && importData.data.welders.length > 0) {
+                    await db.welders.bulkAdd(importData.data.welders);
+                }
+                
+                if (importData.data.plans && importData.data.plans.length > 0) {
+                    await db.plans.bulkAdd(importData.data.plans);
+                }
+                
+                if (importData.data.norms && importData.data.norms.length > 0) {
+                    await db.norms.bulkAdd(importData.data.norms);
+                }
+                
+                if (importData.data.records && importData.data.records.length > 0) {
+                    await db.records.bulkAdd(importData.data.records);
+                }
+                
+                if (importData.data.dailies && importData.data.dailies.length > 0) {
+                    await db.dailies.bulkAdd(importData.data.dailies);
+                }
+            });
+            
+            importStatus = 'Импорт завершен! Перезагрузка страницы...';
+            
+            // Перезагружаем страницу, чтобы обновить все данные
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+            
+        } catch (error) {
+            console.error('Ошибка при импорте:', error);
+            importStatus = `Ошибка импорта: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`;
+            setTimeout(() => { importStatus = ''; }, 5000);
+        } finally {
+            isImporting = false;
+        }
     }
+
+    onMount(() => {
+        // Инициализация компонента
+    });
 </script>
 
-<!-- Скрытый input для выбора файла -->
-<input bind:this={fileInput} type="file" accept=".json" on:change={handleFileSelect} style="display: none;" />
-
-<div class="import-export-controls">
-    <button class="export-button" on:click={handleExport}>
-    ➡️ Экспорт
-    </button>
-    <button class="import-button" on:click={triggerImport}>
-    ⬅️ Импорт
-    </button>
+<div class="import-export-container">
+    <!-- <h3>Импорт/Экспорт данных</h3> ЗАКОММЕНТИРОВАЛИ И УДАЛИЛИ -->
+    
+    <div class="button-group">
+        <button 
+            class="export-button" 
+            on:click={exportAllData} 
+            disabled={isExporting}
+        >
+            {isExporting ? 'Экспорт...' : 'Экспорт'}
+        </button>
+        
+        <label class="import-button">
+            <input 
+                type="file" 
+                accept=".json" 
+                on:change={importAllData} 
+                disabled={isImporting}
+            />
+            {isImporting ? 'Импорт...' : 'Импорт'}
+        </label>
+    </div>
+    
+    {#if exportStatus}
+        <div class="status export-status">{exportStatus}</div>
+    {/if}
+    
+    {#if importStatus}
+        <div class="status import-status">{importStatus}</div>
+    {/if}
 </div>
 
 <style>
-    .import-export-controls {
+    .import-export-container {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 10px;
+        background-color: #f5f5f5;
+        border-radius: 5px;
+        margin-top: 10px;
+    }
+    
+    /* УДАЛИЛИ СТИЛЬ ДЛЯ h3, так как он больше не нужен */
+    /* 
+    .import-export-container h3 {
+        margin: 0 0 5px 0;
+        font-size: 16px;
+        color: #333;
+    }
+    */
+    
+    .button-group {
         display: flex;
         gap: 10px;
+        flex-wrap: wrap;
     }
-
-    .import-export-controls button {
+    
+    .export-button, .import-button {
         padding: 8px 12px;
-        border: none;
-        background-color: #555;
+        background-color: #4299e1;
         color: white;
+        border: none;
         border-radius: 4px;
         cursor: pointer;
-        transition: background-color 0.2s, transform 0.1s;
-        font-weight: bold;
+        transition: background-color 0.2s;
+        font-size: 14px;
     }
-
-    .import-export-controls button:hover {
-        background-color: #777;
-        transform: translateY(-1px);
+    
+    .export-button:hover:not(:disabled), .import-button:hover:not(:disabled) {
+        background-color: #3182ce;
     }
-
-    .import-export-controls button:active {
-        transform: translateY(0);
+    
+    .export-button:disabled, .import-button:disabled {
+        background-color: #a0aec0;
+        cursor: not-allowed;
     }
-
-    .export-button {
-        background-color: #5cb85c;
-    }
-
-    .export-button:hover {
-        background-color: #4cae4c;
-    }
-
+    
     .import-button {
-        background-color: #f0ad4e;
+        position: relative;
+        overflow: hidden;
+        display: inline-block;
     }
-
-    .import-button:hover {
-        background-color: #ec971f;
+    
+    .import-button input[type="file"] {
+        position: absolute;
+        left: -9999px;
+    }
+    
+    .status {
+        padding: 5px 10px;
+        border-radius: 4px;
+        font-size: 14px;
+        margin-top: 5px;
+    }
+    
+    .export-status {
+        background-color: #e6fffa;
+        color: #00796b;
+        border: 1px solid #b2dfdb;
+    }
+    
+    .import-status {
+        background-color: #e3f2fd;
+        color: #0277bd;
+        border: 1px solid #bbdefb;
     }
 </style>
