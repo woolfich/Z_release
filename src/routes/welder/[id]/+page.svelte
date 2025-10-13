@@ -1,3 +1,10 @@
+<svelte:head>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</svelte:head>
+
+
 <script lang="ts">
 import { onMount } from 'svelte';
 import { page } from '$app/stores';
@@ -32,7 +39,7 @@ let selectedPlan: Plan | null = null;
 let showModal = false;
 // --- Конец состояния ---
 
-// --- Вычисляемые значения (reactive statements) ---
+// --- Вычисляемые значения (reactive statements ) ---
 $: activePlans = allPlans.filter(p => p.isUnlimited || (p.quantity > 0 && p.completed < p.quantity));
 // --- Конец вычисляемых значений ---
 
@@ -444,146 +451,158 @@ onMount(() => {
 
 
 <main>
-{#if welder}
-<h1>Карточка сварщика: {welder.name}</h1>
-{:else}
-<h1>Сварщик не найден</h1>
-{/if}
+	<div class="header">
+		{#if welder}
+			<h1>Карточка сварщика</h1>
+			<p class="welder-name">{welder.name}</p>
+		{:else}
+			<h1>Сварщик не найден</h1>
+		{/if}
+	</div>
 
-<!-- Используем компонент формы -->
-<RecordForm
-  {activePlans}
-  bind:newArticle
-  bind:newQuantity
-  on:add={handleAdd}
-/>
+	<!-- Используем компонент формы -->
+	<div class="card">
+		<RecordForm
+		{activePlans}
+		bind:newArticle
+		bind:newQuantity
+		on:add={handleAdd}
+		/>
+	</div>
 
-<!-- Используем компонент списка -->
-<RecordList
-  {records}
-  {allPlans}
-  on:selectArticle={handleSelectArticle}
-  on:openModal={handleOpenModal}
-/>
+	<!-- Используем компонент списка -->
+	<div class="card">
+		<RecordList
+		{records}
+		{allPlans}
+		on:selectArticle={handleSelectArticle}
+		on:openModal={handleOpenModal}
+		/>
+	</div>
 
-<!-- Используем компонент модального окна -->
-<RecordModal
-  bind:show={showModal}
-  selectedRecord={selectedRecord}
-  plan={selectedPlan}
-  on:save={handleSave}
-  on:delete={handleDelete}
-  on:close={closeModal}
-/>
+	<!-- Используем компонент модального окна -->
+	<RecordModal
+	bind:show={showModal}
+	selectedRecord={selectedRecord}
+	plan={selectedPlan}
+	on:save={handleSave}
+	on:delete={handleDelete}
+	on:close={closeModal}
+	/>
 
-<!-- Фиксированная кнопка "домой ∆" -->
-<div class="bottom-nav">
-<a href="{base}/">домой ∆</a>
-</div>
+	<!-- Фиксированная кнопка "домой ∆" -->
+	<div class="bottom-nav">
+		<a href="{base}/" class="home-button">
+			<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+			<span>Домой</span>
+		</a>
+	</div>
 </main>
 
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,400;0,500;0,700;1,400&display=swap');
+	:root {
+		--font-family-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+		--background-color: #f8f9fa;
+		--card-background: #ffffff;
+		--text-color: #212529;
+		--text-muted: #6c757d;
+		--primary-color: #007bff;
+		--primary-hover: #0056b3;
+		--border-color: #dee2e6;
+		--shadow: 0 4px 6px rgba(0, 0, 0, 0.05 );
+		--border-radius: 8px;
+	}
 
-main {
-	font-family: 'Roboto', sans-serif;
-	text-align: center;
-	padding: 2em 1em;
-	max-width: 800px;
-	margin: 0 auto;
-	color: #2c3e50;
-	background-color: #f9fafb;
-	border-radius: 12px;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-	padding-bottom: 100px; /* Increased for better spacing with fixed nav */
-}
+	/* Глобальный сброс и базовые стили */
+	:global(body) {
+		margin: 0;
+		font-family: var(--font-family-sans);
+		background-color: var(--background-color);
+		color: var(--text-color);
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
 
-h1 {
-	color: #34495e;
-	font-weight: 700;
-	font-size: 1.8em;
-	border-bottom: 2px solid #ecf0f1;
-	padding-bottom: 15px;
-	margin-bottom: 30px;
-	letter-spacing: 0.5px;
-}
+	main {
+		padding: 1.5rem 1rem;
+		max-width: 700px;
+		margin: 0 auto;
+		padding-bottom: 100px; /* Запас для нижней навигации */
+	}
 
-.bottom-nav {
-	position: fixed;
-	bottom: 0;
-	left: 0;
-	width: 100%;
-	background-color: #3498db;
-	padding: 1.2em;
-	text-align: center;
-	box-sizing: border-box;
-	box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
-	z-index: 1000;
-}
+	.header {
+		text-align: center;
+		margin-bottom: 2rem;
+	}
 
-.bottom-nav a {
-	color: #ffffff;
-	text-decoration: none;
-	font-weight: 500;
-	font-size: 1.1em;
-	padding: 12px 28px;
-	border-radius: 8px;
-	background-color: #2980b9;
-	transition: background-color 0.3s ease, transform 0.2s ease;
-}
+	h1 {
+		font-size: 1.25rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		margin: 0;
+	}
 
-.bottom-nav a:hover {
-	background-color: #2574a9;
-	transform: translateY(-2px);
-}
+	.welder-name {
+		font-size: 2rem;
+		font-weight: 700;
+		color: var(--text-color);
+		margin: 0.25rem 0 0 0;
+	}
 
-/* Additional styles for readability and modern feel */
-:global(body) {
-	background-color: #ecf0f1;
-	font-family: 'Roboto', sans-serif;
-}
+	.card {
+		background-color: var(--card-background);
+		border-radius: var(--border-radius);
+		box-shadow: var(--shadow);
+		padding: 1.5rem;
+		margin-bottom: 1.5rem;
+		border: 1px solid var(--border-color);
+	}
 
-:global(input, button, select) {
-	font-family: 'Roboto', sans-serif;
-	border-radius: 6px;
-	border: 1px solid #bdc3c7;
-	padding: 10px;
-	font-size: 1em;
-	transition: border-color 0.2s;
-}
+	.bottom-nav {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: rgba(255, 255, 255, 0.8);
+		backdrop-filter: blur(10px);
+		-webkit-backdrop-filter: blur(10px);
+		border-top: 1px solid var(--border-color);
+		padding: 1rem;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		box-shadow: 0 -2px 10px rgba(0,0,0,0.07);
+	}
 
-:global(input:focus, button:focus, select:focus) {
-	border-color: #3498db;
-	outline: none;
-}
+	.home-button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		background-color: var(--primary-color);
+		color: white;
+		text-decoration: none;
+		font-weight: 600;
+		font-size: 1rem;
+		padding: 0.75rem 1.5rem;
+		border-radius: 50px; /* Делаем кнопку овальной */
+		transition: background-color 0.2s ease, transform 0.2s ease;
+		box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+	}
 
-:global(button) {
-	background-color: #3498db;
-	color: white;
-	border: none;
-	cursor: pointer;
-	transition: background-color 0.3s;
-}
+	.home-button:hover {
+		background-color: var(--primary-hover);
+		transform: translateY(-2px);
+	}
 
-:global(button:hover) {
-	background-color: #2980b9;
-}
+	.home-button:active {
+		transform: translateY(0);
+	}
 
-/* Assuming RecordList has class .record-entry for entries */
-:global(.record-entry) {
-	font-family: 'Roboto', sans-serif;
-	font-size: 1.1em;
-	font-style: italic; /* For a 'beautiful' touch, or remove if not desired */
-	color: #34495e;
-	padding: 12px;
-	background-color: #ffffff;
-	border-radius: 8px;
-	margin-bottom: 12px;
-	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-	transition: box-shadow 0.2s;
-}
+	.home-button svg {
+		transition: transform 0.2s ease;
+	}
 
-:global(.record-entry:hover) {
-	box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-}
+	.home-button:hover svg {
+		transform: scale(1.1);
+	}
 </style>
