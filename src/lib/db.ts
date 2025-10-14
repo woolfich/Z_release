@@ -1,8 +1,12 @@
 import Dexie, { type Table } from 'dexie';
 
-export interface Welder {
-id?: number;
-name: string;
+export interface DailyAllocation {
+  id?: number;
+  welderId: number;
+  recordId: number;        // ← обязательно!
+  article: string;
+  dateStr: string;
+  hours: number;
 }
 
 export interface Plan {
