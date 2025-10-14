@@ -278,7 +278,7 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 
 				for (const [monthKey, quantity] of aggregatedQuantities.entries()) {
 					const [year, month] = monthKey.split('-').map(Number);
-					const recordDate = new Date();
+					const recordDate = new Date(year, month - 1, 1);
 
 					const existingRecord = await db.records
 						.where({ welderId, article: art })
