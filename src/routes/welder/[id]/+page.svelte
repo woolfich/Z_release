@@ -12,62 +12,37 @@ import { activatedDays as rawActivatedDays } from '$lib/stores';
 import type { Writable } from 'svelte/store';
 import { base } from '$app/paths';
 
-// --- Импортируем наши компоненты ---
 import RecordForm from '$lib/components/RecordForm.svelte';
-import RecordList from '$lib/components/RecordList.svelte';
+// Убираем RecordList и RecordModal — они больше не нужны для отображения
 import RecordModal from '$lib/components/RecordModal.svelte';
-// --- Конец импорта ---
 
-// --- Явно указываем тип для хранилища ---
 let activatedDays: Writable<string[]> = rawActivatedDays;
-// --- КОНЕЦ ---
 
-// --- Глобальное состояние страницы ---
 let welderId: number;
 let welder: Welder | undefined;
 let allPlans: Plan[] = [];
 let records: DbRecord[] = [];
 
-// Состояние для формы добавления
+// Состояние формы
 let newArticle = '';
 let newQuantity = '';
 
-// Состояние для модального окна
+// Состояние модального окна
 let selectedRecord: DbRecord | null = null;
 let selectedPlan: Plan | null = null;
 let showModal = false;
-// --- Конец состояния ---
 
-// --- Вычисляемые значения ---
 $: activePlans = allPlans.filter(p => p.isUnlimited || (p.quantity > 0 && p.completed < p.quantity));
-// --- Конец вычисляемых значений ---
 
-// --- Simple per-welder mutex ---
+// --- Mutex ---
 const welderLocks = new Map<number, Promise<void>>();
 
 function acquireWelderLock(id: number): Promise<() => void> {
 	let release!: () => void;
 	const p = new Promise<void>((res) => (release = res));
-
 	const prev = welderLocks.get(id) || Promise.resolve();
 	welderLocks.set(id, prev.then(() => p));
-
-	return Promise.resolve(() => {
-		release();
-	});
-}
-// --- end mutex ---
-
-// --- Основные функции работы с данными ---
-async function loadData() {
-	welder = await db.welders.get(parseInt($page.params.id!, 10));
-	if (!welder) {
-		console.error('Сварщик не найден!');
-		return;
-	}
-	welderId = welder.id!;
-	allPlans = await db.plans.toArray();
-	records = await db.records.where('welderId').equals(welderId).reverse().sortBy('date');
+	return Promise.resolve(() => release());
 }
 
 // --- Вспомогательные функции ---
@@ -95,14 +70,13 @@ async function getOccupiedHours(_article: string, dateStr: string): Promise<numb
 	const dailies: DailyAllocation[] = await db.dailies
 		.where({ welderId, dateStr })
 		.toArray();
-	return dailies.reduce((acc: number, d: DailyAllocation) => acc + d.hours, 0);
+	return dailies.reduce((acc, d) => acc + d.hours, 0);
 }
 
-// --- РАСПРЕДЕЛЕНИЕ ЧАСОВ ---
+// --- Распределение часов ---
 async function distributeHours(article: string, totalHours: number, excludeMap: Record<string, number> = {}): Promise<{ dateStr: string; hours: number }[]> {
 	let hoursLeft = totalHours;
 	const dailyDistribution: { dateStr: string; hours: number }[] = [];
-
 	const priorityDates = [...$activatedDays].sort((a, b) => a.localeCompare(b));
 	const priorityDatesSet = new Set(priorityDates);
 	const allocatedSoFar: Record<string, number> = {};
@@ -112,11 +86,9 @@ async function distributeHours(article: string, totalHours: number, excludeMap: 
 		const excluded = excludeMap[dateStr] || 0;
 		const alreadyAllocated = allocatedSoFar[dateStr] || 0;
 		let effective = dbOccupied - excluded + alreadyAllocated;
-		if (effective < 0) effective = 0;
-		return effective;
+		return Math.max(0, effective);
 	}
 
-	// ШАГ 1: Приоритетное распределение
 	for (const dateStr of priorityDates) {
 		if (hoursLeft <= 0.01) break;
 		const occupied = await getEffectiveOccupied(article, dateStr);
@@ -129,26 +101,18 @@ async function distributeHours(article: string, totalHours: number, excludeMap: 
 		}
 	}
 
-	// ШАГ 2: Стандартное распределение
 	let currentDate = new Date();
 	while (hoursLeft > 0.01) {
 		const dayString = getDateString(currentDate);
-		if (priorityDatesSet.has(dayString)) {
-			currentDate = nextWorkingDate(currentDate);
-			continue;
-		}
-		const isWeekend = currentDate.getDay() === 0 || currentDate.getDay() === 6;
-		if (isWeekend) {
-			currentDate = nextWorkingDate(currentDate);
-			continue;
-		}
-		const occupied = await getEffectiveOccupied(article, dayString);
-		const free = Math.max(0, 8 - occupied);
-		if (free > 0) {
-			const toAdd = Math.min(hoursLeft, free);
-			dailyDistribution.push({ dateStr: dayString, hours: toAdd });
-			allocatedSoFar[dayString] = (allocatedSoFar[dayString] || 0) + toAdd;
-			hoursLeft -= toAdd;
+		if (!priorityDatesSet.has(dayString) && currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+			const occupied = await getEffectiveOccupied(article, dayString);
+			const free = Math.max(0, 8 - occupied);
+			if (free > 0) {
+				const toAdd = Math.min(hoursLeft, free);
+				dailyDistribution.push({ dateStr: dayString, hours: toAdd });
+				allocatedSoFar[dayString] = (allocatedSoFar[dayString] || 0) + toAdd;
+				hoursLeft -= toAdd;
+			}
 		}
 		currentDate = nextWorkingDate(currentDate);
 	}
@@ -156,37 +120,57 @@ async function distributeHours(article: string, totalHours: number, excludeMap: 
 	return dailyDistribution;
 }
 
-// --- Удаление dailies для записи ---
+// --- Удаление dailies ---
 async function deleteDailiesForRecord(record: DbRecord) {
-	const art = record.article;
-	const recordDate = new Date(record.date);
-	const recordMonthKey = getMonthKey(recordDate);
-
 	await db.dailies
-		.where('welderId')
-		.equals(welderId)
-		.filter((d: DailyAllocation) => {
-			const dMonthKey = getMonthKey(new Date(d.dateStr));
-			return d.article === art && dMonthKey === recordMonthKey;
-		})
+		.where('recordId')
+		.equals(record.id!)
 		.delete();
 }
 
-// Тумблирование активированных дней
-function toggleActivatedDay(dateStr: string) {
-	activatedDays.update(arr => {
-		const idx = arr.indexOf(dateStr);
-		if (idx === -1) {
-			return [...arr, dateStr].sort((a, b) => a.localeCompare(b));
-		} else {
-			const next = arr.slice();
-			next.splice(idx, 1);
-			return next;
-		}
-	});
+// --- Загрузка данных + построение месячных блоков ---
+let monthlyBlocks: Record<string, Record<string, number>> = {};
+
+async function buildMonthlyBlocks() {
+	if (!welderId) return;
+
+	const allDailies = await db.dailies.where('welderId').equals(welderId).toArray();
+	const recordsMap = new Map<number, DbRecord>();
+	for (const r of records) {
+		if (r.id) recordsMap.set(r.id, r);
+	}
+
+	const blocks: Record<string, Record<string, number>> = {};
+
+	for (const daily of allDailies) {
+		const record = recordsMap.get(daily.recordId);
+		if (!record || record.totalHours <= 0) continue;
+
+		const monthKey = getMonthKey(new Date(daily.dateStr));
+		const portion = daily.hours / record.totalHours;
+		const qty = record.quantity * portion;
+
+		if (!blocks[monthKey]) blocks[monthKey] = {};
+		const art = record.article;
+		blocks[monthKey][art] = (blocks[monthKey][art] || 0) + qty;
+	}
+
+	monthlyBlocks = blocks;
 }
 
-// 1. Добавление записи
+async function loadData() {
+	welder = await db.welders.get(parseInt($page.params.id!, 10));
+	if (!welder) {
+		console.error('Сварщик не найден!');
+		return;
+	}
+	welderId = welder.id!;
+	allPlans = await db.plans.toArray();
+	records = await db.records.where('welderId').equals(welderId).reverse().sortBy('date');
+	await buildMonthlyBlocks();
+}
+
+// --- Обработчики ---
 async function handleAdd(event: CustomEvent<{ article: string; quantity: string | number }>) {
 	try {
 		const { article, quantity } = event.detail;
@@ -200,7 +184,6 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 			alert('Такого артикула нет в активном плане или он уже выполнен!');
 			return;
 		}
-
 		if (!activePlan.isUnlimited && activePlan.completed + qty > activePlan.quantity) {
 			alert(`Нельзя добавить! Превышен план по артикулу "${activePlan.article}". Осталось ${(activePlan.quantity - activePlan.completed).toFixed(2).replace(/\.?0+$/, '')}шт.`);
 			return;
@@ -214,23 +197,12 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 		}
 
 		const totalHours = qty * norm.time;
-
 		const release = await acquireWelderLock(welderId);
 		try {
 			const dailyDistribution = await distributeHours(art, totalHours);
 
 			await db.transaction('rw', [db.records, db.plans, db.dailies], async () => {
-				// Сохраняем dailies
-				for (const entry of dailyDistribution) {
-					await db.dailies.add({
-						welderId: welderId,
-						article: art,
-						dateStr: entry.dateStr,
-						hours: entry.hours
-					});
-				}
-
-				// ОДНА запись на операцию
+				// Сначала создаём запись
 				const now = new Date();
 				const operationDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 				const historyEntry = { 
@@ -238,15 +210,25 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 					quantity: qty, 
 					note: `Добавлено ${qty.toFixed(2)} шт` 
 				};
-
-				await db.records.add({
+				const recordId = await db.records.add({
 					welderId: welderId,
 					article: art,
 					quantity: qty,
-					totalHours: totalHours, // ← "ярлык"
+					totalHours: totalHours,
 					date: operationDate,
 					history: JSON.stringify([historyEntry])
 				});
+
+				// Потом — dailies с recordId
+				for (const entry of dailyDistribution) {
+					await db.dailies.add({
+						welderId: welderId,
+						recordId: recordId, // ← связь!
+						article: art,
+						dateStr: entry.dateStr,
+						hours: entry.hours
+					});
+				}
 
 				activePlan.completed += qty;
 				await db.plans.update(activePlan.id!, { completed: activePlan.completed });
@@ -258,27 +240,23 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 		newArticle = '';
 		newQuantity = '';
 		await loadData();
-
 	} catch (error) {
 		console.error("Ошибка при добавлении записи:", error);
 		alert(`Произошла ошибка! Подробности в консоли (F12).`);
 	}
 }
 
-// 2. Выбор артикула из списка
 function handleSelectArticle(event: CustomEvent<{ article: string }>) {
 	newArticle = event.detail.article;
 	document.getElementById('quantity-input')?.focus();
 }
 
-// 3. Открытие модального окна
 function handleOpenModal(event: CustomEvent<{ record: DbRecord }>) {
 	selectedRecord = event.detail.record;
 	selectedPlan = allPlans.find(p => p.article === selectedRecord!.article) || null;
 	showModal = true;
 }
 
-// 4. Сохранение изменённой записи
 async function handleSave(event: CustomEvent<{ newQuantity: number; quantityDifference: number }>) {
 	if (!selectedRecord || !selectedPlan) return;
 
@@ -295,7 +273,6 @@ async function handleSave(event: CustomEvent<{ newQuantity: number; quantityDiff
 		}
 
 		const newTotalHours = newQuantity * norm.time;
-
 		await deleteDailiesForRecord(record);
 
 		const release = await acquireWelderLock(welderId);
@@ -306,6 +283,7 @@ async function handleSave(event: CustomEvent<{ newQuantity: number; quantityDiff
 				for (const entry of dailyDistribution) {
 					await db.dailies.add({
 						welderId: welderId,
+						recordId: record.id!,
 						article: art,
 						dateStr: entry.dateStr,
 						hours: entry.hours
@@ -323,7 +301,7 @@ async function handleSave(event: CustomEvent<{ newQuantity: number; quantityDiff
 
 				await db.records.update(record.id!, {
 					quantity: newQuantity,
-					totalHours: newTotalHours, // ← обновляем "ярлык"
+					totalHours: newTotalHours,
 					date: updatedDate,
 					history: JSON.stringify(newHistory)
 				});
@@ -337,14 +315,12 @@ async function handleSave(event: CustomEvent<{ newQuantity: number; quantityDiff
 
 		closeModal();
 		await loadData();
-
 	} catch (error) {
 		console.error("Ошибка при сохранении:", error);
 		alert(`Произошла ошибка! Подробности в консоли (F12).`);
 	}
 }
 
-// 5. Удаление записи
 async function handleDelete() {
 	if (!selectedRecord || !selectedPlan) return;
 
@@ -369,7 +345,6 @@ async function handleDelete() {
 	}
 }
 
-// 6. Закрытие модального окна
 function closeModal() {
 	showModal = false;
 	selectedRecord = null;
@@ -400,14 +375,22 @@ onMount(() => {
 		/>
 	</div>
 
-	<div class="card">
-		<RecordList
-			{records}
-			{allPlans}
-			on:selectArticle={handleSelectArticle}
-			on:openModal={handleOpenModal}
-		/>
-	</div>
+	<!-- Месячные блоки вместо RecordList -->
+	{#each Object.keys(monthlyBlocks).sort().reverse() as monthKey}
+		<div class="card">
+			<h2 class="month-title">
+				{new Date(monthKey + '-01').toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}
+			</h2>
+			{#each Object.entries(monthlyBlocks[monthKey]).sort(([a], [b]) => a.localeCompare(b)) as [article, totalQty]}
+				<div class="record-row" on:click={() => {
+					// Опционально: открыть модалку по клику (нужна логика поиска записи)
+				}}>
+					<span class="article">{article}</span>
+					<span class="quantity">{totalQty.toFixed(2).replace(/\.?0+$/, '')} шт</span>
+				</div>
+			{/each}
+		</div>
+	{/each}
 
 	<RecordModal
 		bind:show={showModal}
@@ -482,6 +465,42 @@ onMount(() => {
 		padding: 1.5rem;
 		margin-bottom: 1.5rem;
 		border: 1px solid var(--border-color);
+	}
+
+	.month-title {
+		font-size: 1.1rem;
+		font-weight: 600;
+		margin: 0 0 1rem 0;
+		color: var(--text-muted);
+		text-align: center;
+	}
+
+	.record-row {
+		display: flex;
+		justify-content: space-between;
+		padding: 0.5rem 0;
+		border-bottom: 1px solid var(--border-color);
+		cursor: pointer;
+		transition: background-color 0.15s;
+	}
+
+	.record-row:hover {
+		background-color: rgba(0, 123, 255, 0.03);
+		border-radius: 4px;
+	}
+
+	.record-row:last-child {
+		border-bottom: none;
+	}
+
+	.article {
+		font-weight: 500;
+		font-size: 1.05rem;
+	}
+
+	.quantity {
+		color: var(--text-color);
+		font-weight: 500;
 	}
 
 	.bottom-nav {
