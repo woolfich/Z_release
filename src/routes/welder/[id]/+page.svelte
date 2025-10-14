@@ -4,7 +4,6 @@
 	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </svelte:head>
 
-
 <script lang="ts">
 import { onMount } from 'svelte';
 import { page } from '$app/stores';
@@ -39,28 +38,22 @@ let selectedPlan: Plan | null = null;
 let showModal = false;
 // --- Конец состояния ---
 
-// --- Вычисляемые значения (reactive statements ) ---
+// --- Вычисляемые значения ---
 $: activePlans = allPlans.filter(p => p.isUnlimited || (p.quantity > 0 && p.completed < p.quantity));
 // --- Конец вычисляемых значений ---
 
-// --- Simple per-welder mutex (to avoid race conditions when writing dailies) ---
+// --- Simple per-welder mutex ---
 const welderLocks = new Map<number, Promise<void>>();
 
 function acquireWelderLock(id: number): Promise<() => void> {
-	// Create a new "slot" that will be resolved when this task is done
 	let release!: () => void;
 	const p = new Promise<void>((res) => (release = res));
 
 	const prev = welderLocks.get(id) || Promise.resolve();
-	// Chain the new slot after previous
 	welderLocks.set(id, prev.then(() => p));
 
-	// Return a function that resolves the current slot
 	return Promise.resolve(() => {
 		release();
-		// If current slot is last, clean up map entry (best-effort)
-		const cur = welderLocks.get(id);
-		// Note: can't easily compare Promises here for identity in all engines; leave map cleanup optional
 	});
 }
 // --- end mutex ---
@@ -98,61 +91,32 @@ function nextWorkingDate(date: Date): Date {
 	return next;
 }
 
-// !!! FIX: считаем ВСЕ часы сварщика на дату (независимо от артикула),
-// чтобы соблюдался лимит 8 часов на ячейку.
 async function getOccupiedHours(_article: string, dateStr: string): Promise<number> {
-	// используем where по индексируемым полям — быстрее и корректнее
 	const dailies: DailyAllocation[] = await db.dailies
 		.where({ welderId, dateStr })
 		.toArray();
 	return dailies.reduce((acc: number, d: DailyAllocation) => acc + d.hours, 0);
 }
 
-// Получить map dateStr -> hours для dailies, которые принадлежали записи (используется при редактировании)
-async function getRecordDailiesMap(record: DbRecord): Promise<Record<string, number>> {
-	const map: Record<string, number> = {};
-	const recordDate = new Date(record.date);
-	const recordMonthKey = getMonthKey(recordDate);
-
-	const dailies: DailyAllocation[] = await db.dailies
-		.where('welderId')
-		.equals(welderId)
-		.filter((d: DailyAllocation) => {
-			const dMonthKey = getMonthKey(new Date(d.dateStr));
-			return d.article === record.article && dMonthKey === recordMonthKey;
-		})
-		.toArray();
-
-	for (const d of dailies) {
-		map[d.dateStr] = (map[d.dateStr] || 0) + d.hours;
-	}
-	return map;
-}
-
 // --- РАСПРЕДЕЛЕНИЕ ЧАСОВ ---
-// excludeMap: optional map dateStr -> hours (часы, которые нужно вычесть из занятости БД, например старые dailies этой же записи)
 async function distributeHours(article: string, totalHours: number, excludeMap: Record<string, number> = {}): Promise<{ dateStr: string; hours: number }[]> {
 	let hoursLeft = totalHours;
 	const dailyDistribution: { dateStr: string; hours: number }[] = [];
 
 	const priorityDates = [...$activatedDays].sort((a, b) => a.localeCompare(b));
 	const priorityDatesSet = new Set(priorityDates);
-
-	// локальная карта уже выделённых в этом вызове часов (чтобы не переписать одну дату несколько раз)
 	const allocatedSoFar: Record<string, number> = {};
 
-	// вспомог: получить текущую занятость с учётом excludeMap и allocatedSoFar
 	async function getEffectiveOccupied(articleLocal: string, dateStr: string): Promise<number> {
 		const dbOccupied = await getOccupiedHours(articleLocal, dateStr);
 		const excluded = excludeMap[dateStr] || 0;
 		const alreadyAllocated = allocatedSoFar[dateStr] || 0;
-		// effective = (в базе - то, что мы исключаем) + то, что мы уже запланировали в этой сессии
 		let effective = dbOccupied - excluded + alreadyAllocated;
 		if (effective < 0) effective = 0;
 		return effective;
 	}
 
-	// ШАГ 1: Приоритетное распределение по активированным ячейкам
+	// ШАГ 1: Приоритетное распределение
 	for (const dateStr of priorityDates) {
 		if (hoursLeft <= 0.01) break;
 		const occupied = await getEffectiveOccupied(article, dateStr);
@@ -165,7 +129,7 @@ async function distributeHours(article: string, totalHours: number, excludeMap: 
 		}
 	}
 
-	// ШАГ 2: Стандартное распределение остатка с сегодняшнего дня
+	// ШАГ 2: Стандартное распределение
 	let currentDate = new Date();
 	while (hoursLeft > 0.01) {
 		const dayString = getDateString(currentDate);
@@ -208,7 +172,7 @@ async function deleteDailiesForRecord(record: DbRecord) {
 		.delete();
 }
 
-// Тумблирование активированных дней (toggle) — вызывай из календаря по долгому тапу
+// Тумблирование активированных дней
 function toggleActivatedDay(dateStr: string) {
 	activatedDays.update(arr => {
 		const idx = arr.indexOf(dateStr);
@@ -222,7 +186,7 @@ function toggleActivatedDay(dateStr: string) {
 	});
 }
 
-// 1. Из RecordForm: пользователь хочет добавить запись
+// 1. Добавление записи
 async function handleAdd(event: CustomEvent<{ article: string; quantity: string | number }>) {
 	try {
 		const { article, quantity } = event.detail;
@@ -251,22 +215,12 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 
 		const totalHours = qty * norm.time;
 
-		// Acquire per-welder lock to avoid concurrent writes that can break the 8h limit
 		const release = await acquireWelderLock(welderId);
 		try {
-			// При создании новой записи excludeMap не нужен
 			const dailyDistribution = await distributeHours(art, totalHours);
 
-			// Агрегация по месяцам
-			const aggregatedQuantities = new Map<string, number>();
-			for (const entry of dailyDistribution) {
-				const date = new Date(entry.dateStr);
-				const monthKey = getMonthKey(date);
-				const quantityForDay = entry.hours / norm.time;
-				aggregatedQuantities.set(monthKey, (aggregatedQuantities.get(monthKey) || 0) + quantityForDay);
-			}
-
 			await db.transaction('rw', [db.records, db.plans, db.dailies], async () => {
+				// Сохраняем dailies
 				for (const entry of dailyDistribution) {
 					await db.dailies.add({
 						welderId: welderId,
@@ -276,43 +230,31 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 					});
 				}
 
-				for (const [monthKey, quantity] of aggregatedQuantities.entries()) {
-					const [year, month] = monthKey.split('-').map(Number);
-					const recordDate = new Date();
+				// ОДНА запись на операцию
+				const now = new Date();
+				const operationDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+				const historyEntry = { 
+					date: new Date().toISOString(), 
+					quantity: qty, 
+					note: `Добавлено ${qty.toFixed(2)} шт` 
+				};
 
-					const existingRecord = await db.records
-						.where({ welderId, article: art })
-						.and(r => {
-							const rDate = new Date(r.date);
-							return rDate.getFullYear() === year && rDate.getMonth() === month - 1;
-						})
-						.first();
-
-					const historyEntry = { date: new Date().toISOString(), quantity: quantity, note: `Добавлено ${quantity.toFixed(2)} шт` };
-					if (existingRecord) {
-						const newTotalQuantity = existingRecord.quantity + quantity;
-						const newHistory = [...JSON.parse(existingRecord.history || '[]'), historyEntry];
-						await db.records.update(existingRecord.id!, { quantity: newTotalQuantity, history: JSON.stringify(newHistory) });
-					} else {
-						await db.records.add({
-							welderId: welderId,
-							article: art,
-							quantity: quantity,
-							date: recordDate,
-							history: JSON.stringify([historyEntry])
-						});
-					}
-				}
+				await db.records.add({
+					welderId: welderId,
+					article: art,
+					quantity: qty,
+					totalHours: totalHours, // ← "ярлык"
+					date: operationDate,
+					history: JSON.stringify([historyEntry])
+				});
 
 				activePlan.completed += qty;
 				await db.plans.update(activePlan.id!, { completed: activePlan.completed });
 			});
 		} finally {
-			// release lock
 			release();
 		}
 
-		// НЕ очищаем activatedDays — чтобы выбор ячеек сохранялся между вводами
 		newArticle = '';
 		newQuantity = '';
 		await loadData();
@@ -323,13 +265,13 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 	}
 }
 
-// 2. Из RecordList: пользователь кликнул на артикул
+// 2. Выбор артикула из списка
 function handleSelectArticle(event: CustomEvent<{ article: string }>) {
 	newArticle = event.detail.article;
 	document.getElementById('quantity-input')?.focus();
 }
 
-// 3. Из RecordList: пользователь долго нажал на запись
+// 3. Открытие модального окна
 function handleOpenModal(event: CustomEvent<{ record: DbRecord }>) {
 	selectedRecord = event.detail.record;
 	selectedPlan = allPlans.find(p => p.article === selectedRecord!.article) || null;
@@ -352,24 +294,15 @@ async function handleSave(event: CustomEvent<{ newQuantity: number; quantityDiff
 			return;
 		}
 
-		const oldQuantity = record.quantity;
-		const totalHours = newQuantity * norm.time;
+		const newTotalHours = newQuantity * norm.time;
 
-		// --- НОВОЕ: сначала считываем, какие dailies принадлежали этой записи (map date->hours)
-		const recordOwnMap = await getRecordDailiesMap(record);
-
-		// Удаляем старые dailies (как раньше)
 		await deleteDailiesForRecord(record);
 
-		// Acquire per-welder lock to avoid race conditions while redistributing and writing
 		const release = await acquireWelderLock(welderId);
 		try {
-			// Распределяем новые часы, передавая excludeMap = recordOwnMap,
-			// чтобы distributeHours "знал", какие часы были нашими и не учитывал их дважды.
-			const dailyDistribution = await distributeHours(art, totalHours, recordOwnMap);
+			const dailyDistribution = await distributeHours(art, newTotalHours);
 
 			await db.transaction('rw', [db.records, db.plans, db.dailies], async () => {
-				// Добавляем новые dailies
 				for (const entry of dailyDistribution) {
 					await db.dailies.add({
 						welderId: welderId,
@@ -379,20 +312,22 @@ async function handleSave(event: CustomEvent<{ newQuantity: number; quantityDiff
 					});
 				}
 
-				// Обновляем запись
+				const now = new Date();
+				const updatedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 				const historyEntry = {
 					date: new Date().toISOString(),
 					quantity: quantityDifference,
-					note: `Изменено с ${oldQuantity.toFixed(2).replace(/\.?0+$/, '')} на ${newQuantity.toFixed(2).replace(/\.?0+$/, '')}`
+					note: `Изменено с ${record.quantity.toFixed(2)} на ${newQuantity.toFixed(2)}`
 				};
 				const newHistory = [...JSON.parse(record.history || '[]'), historyEntry];
+
 				await db.records.update(record.id!, {
 					quantity: newQuantity,
-					date: record.date,
+					totalHours: newTotalHours, // ← обновляем "ярлык"
+					date: updatedDate,
 					history: JSON.stringify(newHistory)
 				});
 
-				// Обновляем план
 				plan.completed += quantityDifference;
 				await db.plans.update(plan.id!, { completed: plan.completed });
 			});
@@ -400,7 +335,6 @@ async function handleSave(event: CustomEvent<{ newQuantity: number; quantityDiff
 			release();
 		}
 
-		// НЕ очищаем activatedDays — чтобы выбор ячеек сохранялся между правками
 		closeModal();
 		await loadData();
 
@@ -418,7 +352,6 @@ async function handleDelete() {
 	const plan = selectedPlan;
 
 	try {
-		// Удаляем связанные dailies
 		await deleteDailiesForRecord(record);
 
 		await db.transaction('rw', db.records, db.plans, async () => {
@@ -436,19 +369,17 @@ async function handleDelete() {
 	}
 }
 
-// 6. Из RecordModal: пользователь закрыл окно
+// 6. Закрытие модального окна
 function closeModal() {
 	showModal = false;
 	selectedRecord = null;
 	selectedPlan = null;
 }
-// --- Конец обработчиков ---
 
 onMount(() => {
 	loadData();
 });
 </script>
-
 
 <main>
 	<div class="header">
@@ -460,37 +391,33 @@ onMount(() => {
 		{/if}
 	</div>
 
-	<!-- Используем компонент формы -->
 	<div class="card">
 		<RecordForm
-		{activePlans}
-		bind:newArticle
-		bind:newQuantity
-		on:add={handleAdd}
+			{activePlans}
+			bind:newArticle
+			bind:newQuantity
+			on:add={handleAdd}
 		/>
 	</div>
 
-	<!-- Используем компонент списка -->
 	<div class="card">
 		<RecordList
-		{records}
-		{allPlans}
-		on:selectArticle={handleSelectArticle}
-		on:openModal={handleOpenModal}
+			{records}
+			{allPlans}
+			on:selectArticle={handleSelectArticle}
+			on:openModal={handleOpenModal}
 		/>
 	</div>
 
-	<!-- Используем компонент модального окна -->
 	<RecordModal
-	bind:show={showModal}
-	selectedRecord={selectedRecord}
-	plan={selectedPlan}
-	on:save={handleSave}
-	on:delete={handleDelete}
-	on:close={closeModal}
+		bind:show={showModal}
+		selectedRecord={selectedRecord}
+		plan={selectedPlan}
+		on:save={handleSave}
+		on:delete={handleDelete}
+		on:close={closeModal}
 	/>
 
-	<!-- Фиксированная кнопка "домой ∆" -->
 	<div class="bottom-nav">
 		<a href="{base}/" class="home-button">
 			<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
@@ -513,7 +440,6 @@ onMount(() => {
 		--border-radius: 8px;
 	}
 
-	/* Глобальный сброс и базовые стили */
 	:global(body) {
 		margin: 0;
 		font-family: var(--font-family-sans);
@@ -527,7 +453,7 @@ onMount(() => {
 		padding: 1.5rem 1rem;
 		max-width: 700px;
 		margin: 0 auto;
-		padding-bottom: 100px; /* Запас для нижней навигации */
+		padding-bottom: 100px;
 	}
 
 	.header {
@@ -584,7 +510,7 @@ onMount(() => {
 		font-weight: 600;
 		font-size: 1rem;
 		padding: 0.75rem 1.5rem;
-		border-radius: 50px; /* Делаем кнопку овальной */
+		border-radius: 50px;
 		transition: background-color 0.2s ease, transform 0.2s ease;
 		box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
 	}
