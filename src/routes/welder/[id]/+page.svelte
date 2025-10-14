@@ -354,52 +354,55 @@ function closeModal() {
 	selectedPlan = null;
 }
 
+// ... весь твой код ...
+
+// --- Action для долгого тапа ---
+function longPress(node: HTMLElement, callback: () => void) {
+	let timer: number;
+	let isLongPress = false;
+
+	const start = () => {
+		isLongPress = false;
+		timer = window.setTimeout(() => {
+			isLongPress = true;
+			callback();
+		}, 500);
+	};
+
+	const cancel = () => {
+		clearTimeout(timer);
+	};
+
+	const end = () => {
+		cancel();
+	};
+
+	node.addEventListener('mousedown', start);
+	node.addEventListener('mouseleave', cancel);
+	node.addEventListener('mouseup', end);
+
+	node.addEventListener('touchstart', start);
+	node.addEventListener('touchmove', cancel);
+	node.addEventListener('touchend', end);
+
+	return {
+		destroy() {
+			node.removeEventListener('mousedown', start);
+			node.removeEventListener('mouseleave', cancel);
+			node.removeEventListener('mouseup', end);
+			node.removeEventListener('touchstart', start);
+			node.removeEventListener('touchmove', cancel);
+			node.removeEventListener('touchend', end);
+		}
+	};
+}
+
 onMount(() => {
 	loadData();
 });
-</script>
 
 <!-- Action для долгого тапа -->
-<script>
-	function longPress(node: HTMLElement, callback: () => void) {
-		let timer: number;
-		let isLongPress = false;
 
-		const start = () => {
-			isLongPress = false;
-			timer = window.setTimeout(() => {
-				isLongPress = true;
-				callback();
-			}, 500);
-		};
-
-		const cancel = () => {
-			clearTimeout(timer);
-		};
-
-		const end = () => {
-			cancel();
-		};
-
-		node.addEventListener('mousedown', start);
-		node.addEventListener('mouseleave', cancel);
-		node.addEventListener('mouseup', end);
-
-		node.addEventListener('touchstart', start);
-		node.addEventListener('touchmove', cancel);
-		node.addEventListener('touchend', end);
-
-		return {
-			destroy() {
-				node.removeEventListener('mousedown', start);
-				node.removeEventListener('mouseleave', cancel);
-				node.removeEventListener('mouseup', end);
-				node.removeEventListener('touchstart', start);
-				node.removeEventListener('touchmove', cancel);
-				node.removeEventListener('touchend', end);
-			}
-		};
-	}
 </script>
 
 <main>
