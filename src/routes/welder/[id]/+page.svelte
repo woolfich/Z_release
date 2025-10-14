@@ -13,7 +13,6 @@ import type { Writable } from 'svelte/store';
 import { base } from '$app/paths';
 
 import RecordForm from '$lib/components/RecordForm.svelte';
-// Убираем RecordList и RecordModal — они больше не нужны для отображения
 import RecordModal from '$lib/components/RecordModal.svelte';
 
 let activatedDays: Writable<string[]> = rawActivatedDays;
@@ -202,7 +201,6 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 			const dailyDistribution = await distributeHours(art, totalHours);
 
 			await db.transaction('rw', [db.records, db.plans, db.dailies], async () => {
-				// Сначала создаём запись
 				const now = new Date();
 				const operationDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 				const historyEntry = { 
@@ -219,11 +217,10 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 					history: JSON.stringify([historyEntry])
 				});
 
-				// Потом — dailies с recordId
 				for (const entry of dailyDistribution) {
 					await db.dailies.add({
 						welderId: welderId,
-						recordId: recordId, // ← связь!
+						recordId: recordId,
 						article: art,
 						dateStr: entry.dateStr,
 						hours: entry.hours
@@ -246,15 +243,21 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 	}
 }
 
-function handleSelectArticle(event: CustomEvent<{ article: string }>) {
-	newArticle = event.detail.article;
+// --- НОВЫЕ функции для взаимодействия с месячными блоками ---
+function handleSelectArticleFromBlock(article: string) {
+	newArticle = article;
 	document.getElementById('quantity-input')?.focus();
 }
 
-function handleOpenModal(event: CustomEvent<{ record: DbRecord }>) {
-	selectedRecord = event.detail.record;
-	selectedPlan = allPlans.find(p => p.article === selectedRecord!.article) || null;
-	showModal = true;
+function handleOpenModalForArticle(article: string) {
+	const record = records.find(r => r.article === article);
+	if (record) {
+		selectedRecord = record;
+		selectedPlan = allPlans.find(p => p.article === article) || null;
+		showModal = true;
+	} else {
+		alert('Запись не найдена для редактирования');
+	}
 }
 
 async function handleSave(event: CustomEvent<{ newQuantity: number; quantityDifference: number }>) {
@@ -356,6 +359,49 @@ onMount(() => {
 });
 </script>
 
+<!-- Action для долгого тапа -->
+<script>
+	function longPress(node: HTMLElement, callback: () => void) {
+		let timer: number;
+		let isLongPress = false;
+
+		const start = () => {
+			isLongPress = false;
+			timer = window.setTimeout(() => {
+				isLongPress = true;
+				callback();
+			}, 500);
+		};
+
+		const cancel = () => {
+			clearTimeout(timer);
+		};
+
+		const end = () => {
+			cancel();
+		};
+
+		node.addEventListener('mousedown', start);
+		node.addEventListener('mouseleave', cancel);
+		node.addEventListener('mouseup', end);
+
+		node.addEventListener('touchstart', start);
+		node.addEventListener('touchmove', cancel);
+		node.addEventListener('touchend', end);
+
+		return {
+			destroy() {
+				node.removeEventListener('mousedown', start);
+				node.removeEventListener('mouseleave', cancel);
+				node.removeEventListener('mouseup', end);
+				node.removeEventListener('touchstart', start);
+				node.removeEventListener('touchmove', cancel);
+				node.removeEventListener('touchend', end);
+			}
+		};
+	}
+</script>
+
 <main>
 	<div class="header">
 		{#if welder}
@@ -375,16 +421,18 @@ onMount(() => {
 		/>
 	</div>
 
-	<!-- Месячные блоки вместо RecordList -->
+	<!-- Месячные блоки -->
 	{#each Object.keys(monthlyBlocks).sort().reverse() as monthKey}
 		<div class="card">
 			<h2 class="month-title">
 				{new Date(monthKey + '-01').toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}
 			</h2>
 			{#each Object.entries(monthlyBlocks[monthKey]).sort(([a], [b]) => a.localeCompare(b)) as [article, totalQty]}
-				<div class="record-row" on:click={() => {
-					// Опционально: открыть модалку по клику (нужна логика поиска записи)
-				}}>
+				<div
+					class="record-row"
+					on:click|preventDefault={() => handleSelectArticleFromBlock(article)}
+					use:longPress={() => handleOpenModalForArticle(article)}
+				>
 					<span class="article">{article}</span>
 					<span class="quantity">{totalQty.toFixed(2).replace(/\.?0+$/, '')} шт</span>
 				</div>
