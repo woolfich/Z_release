@@ -208,13 +208,14 @@ async function handleAdd(event: CustomEvent<{ article: string; quantity: string 
 					quantity: qty, 
 					note: `Добавлено ${qty.toFixed(2)} шт` 
 				};
-				const recordId = await db.records.add({
-					welderId: welderId,
-					article: art,
-					quantity: qty,
-					totalHours: totalHours,
-					date: operationDate,
-					history: JSON.stringify([historyEntry])
+				const recordId =await db.records.add({
+				  welderId: welderId,
+				  article: art,
+				  quantity: qty,
+				  totalHours: totalHours,
+				  date: operationDate,      // дата создания
+				  lastUpdated: new Date(),  // <--- НОВОЕ ПОЛЕ: время ввода
+				  history: JSON.stringify([historyEntry])
 				});
 
 				for (const entry of dailyDistribution) {
@@ -303,10 +304,11 @@ async function handleSave(event: CustomEvent<{ newQuantity: number; quantityDiff
 				const newHistory = [...JSON.parse(record.history || '[]'), historyEntry];
 
 				await db.records.update(record.id!, {
-					quantity: newQuantity,
-					totalHours: newTotalHours,
-					date: updatedDate,
-					history: JSON.stringify(newHistory)
+				  quantity: newQuantity,
+				  totalHours: newTotalHours,
+				  date: record.date,        // не меняем дату создания
+				  lastUpdated: new Date(),  // <--- НОВОЕ ПОЛЕ: время редактирования
+				  history: JSON.stringify(newHistory)
 				});
 
 				plan.completed += quantityDifference;
