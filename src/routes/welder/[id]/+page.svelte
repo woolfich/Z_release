@@ -136,7 +136,7 @@ type MonthlyRecord = {
   lastUpdated: Date;
 };
 
-- let monthlyBlocks: Record<string, Record<string, number>> = {};// monthKey -> массив объектов
+let monthlyBlocks: Record<string, MonthlyRecord[]> = {};  
 
 async function buildMonthlyBlocks() {
   if (!welderId) return;
