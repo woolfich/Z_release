@@ -459,7 +459,7 @@ onMount(() => {
 			{activePlans}
 			bind:newArticle
 			bind:newQuantity
-			on:add={handleAdd}
+			on:submit={handleAdd}
 		/>
 	</div>
 
