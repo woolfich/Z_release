@@ -354,8 +354,6 @@ function closeModal() {
 	selectedPlan = null;
 }
 
-// ... весь твой код ...
-
 // --- Action для долгого тапа ---
 function longPress(node: HTMLElement, callback: () => void) {
 	let timer: number;
@@ -400,9 +398,6 @@ function longPress(node: HTMLElement, callback: () => void) {
 onMount(() => {
 	loadData();
 });
-
-<!-- Action для долгого тапа -->
-
 </script>
 
 <main>
