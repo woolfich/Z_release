@@ -130,31 +130,67 @@ async function deleteDailiesForRecord(record: DbRecord) {
 // --- Загрузка данных + построение месячных блоков ---
 let monthlyBlocks: Record<string, Record<string, number>> = {};
 
+// Добавим тип для месячной записи, включающий lastUpdated
+type MonthlyRecord = {
+  article: string;
+  totalQty: number;
+  lastUpdated: Date;
+};
+
+let monthlyBlocks: Record<string, MonthlyRecord[]> = {}; // monthKey -> массив объектов
+
 async function buildMonthlyBlocks() {
-	if (!welderId) return;
+  if (!welderId) return;
 
-	const allDailies = await db.dailies.where('welderId').equals(welderId).toArray();
-	const recordsMap = new Map<number, DbRecord>();
-	for (const r of records) {
-		if (r.id) recordsMap.set(r.id, r);
-	}
+  const allDailies = await db.dailies.where('welderId').equals(welderId).toArray();
+  const recordsMap = new Map<number, DbRecord>();
+  for (const r of records) {
+    if (r.id) recordsMap.set(r.id, r);
+  }
 
-	const blocks: Record<string, Record<string, number>> = {};
+  // Группируем по месяцу и артикулу, суммируем количество и находим последнее lastUpdated
+  const tempBlocks: Record<string, Map<string, { totalQty: number; lastUpdated: Date }>> = {};
 
-	for (const daily of allDailies) {
-		const record = recordsMap.get(daily.recordId);
-		if (!record || record.totalHours <= 0) continue;
+  for (const daily of allDailies) {
+    const record = recordsMap.get(daily.recordId);
+    if (!record || record.totalHours <= 0) continue;
 
-		const monthKey = getMonthKey(new Date(daily.dateStr));
-		const portion = daily.hours / record.totalHours;
-		const qty = record.quantity * portion;
+    const monthKey = getMonthKey(new Date(daily.dateStr));
+    const portion = daily.hours / record.totalHours;
+    const qtyForThisDaily = record.quantity * portion;
 
-		if (!blocks[monthKey]) blocks[monthKey] = {};
-		const art = record.article;
-		blocks[monthKey][art] = (blocks[monthKey][art] || 0) + qty;
-	}
+    if (!tempBlocks[monthKey]) {
+      tempBlocks[monthKey] = new Map();
+    }
 
-	monthlyBlocks = blocks;
+    const article = record.article;
+    const existing = tempBlocks[monthKey].get(article);
+
+    if (existing) {
+      // Суммируем количество
+      existing.totalQty += qtyForThisDaily;
+      // Обновляем lastUpdated, если текущая запись новее
+      if (record.lastUpdated > existing.lastUpdated) {
+        existing.lastUpdated = record.lastUpdated;
+      }
+    } else {
+      // Создаём новую запись
+      tempBlocks[monthKey].set(article, {
+        totalQty: qtyForThisDaily,
+        lastUpdated: record.lastUpdated // <-- используем lastUpdated из записи
+      });
+    }
+  }
+
+  // Преобразуем Map в массив и сортируем по lastUpdated (новые наверх)
+  monthlyBlocks = {};
+  for (const [monthKey, articleMap] of Object.entries(tempBlocks)) {
+    monthlyBlocks[monthKey] = Array.from(articleMap.entries()).map(([article, data]) => ({
+      article,
+      totalQty: data.totalQty,
+      lastUpdated: data.lastUpdated
+    })).sort((a, b) => b.lastUpdated.getTime() - a.lastUpdated.getTime()); // Сортировка: новые первыми
+  }
 }
 
 async function loadData() {
