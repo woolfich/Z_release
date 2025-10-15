@@ -177,7 +177,7 @@ async function buildMonthlyBlocks() {
       // Создаём новую запись
       tempBlocks[monthKey].set(article, {
         totalQty: qtyForThisDaily,
-        lastUpdated: record.lastUpdated // <-- используем lastUpdated из записи
+        lastUpdated: record.lastUpdated
       });
     }
   }
