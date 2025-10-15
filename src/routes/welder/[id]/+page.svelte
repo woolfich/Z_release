@@ -394,43 +394,50 @@ function closeModal() {
 
 // --- Action для долгого тапа ---
 function longPress(node: HTMLElement, callback: () => void) {
-	let timer: number;
-	let isLongPress = false;
+  let timer: number;
+  let isLongPress = false;
 
-	const start = () => {
-		isLongPress = false;
-		timer = window.setTimeout(() => {
-			isLongPress = true;
-			callback();
-		}, 500);
-	};
+  const start = (e: Event) => {
+    isLongPress = false;
+    timer = window.setTimeout(() => {
+      isLongPress = true;
+      callback();          // вызываем ваш обработчик
+      e.preventDefault();  // ← подавляем клик
+      e.stopPropagation();
+    }, 500);
+  };
 
-	const cancel = () => {
-		clearTimeout(timer);
-	};
+  const cancel = () => {
+    clearTimeout(timer);
+  };
 
-	const end = () => {
-		cancel();
-	};
+  const end = (e: Event) => {
+    cancel();
+    // если всё-таки был длинный тап – глушим клик
+    if (isLongPress) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
 
-	node.addEventListener('mousedown', start);
-	node.addEventListener('mouseleave', cancel);
-	node.addEventListener('mouseup', end);
+  node.addEventListener('mousedown', start);
+  node.addEventListener('mouseleave', cancel);
+  node.addEventListener('mouseup', end);
 
-	node.addEventListener('touchstart', start);
-	node.addEventListener('touchmove', cancel);
-	node.addEventListener('touchend', end);
+  node.addEventListener('touchstart', start, { passive: true });
+  node.addEventListener('touchmove', cancel);
+  node.addEventnder('touchend', end);
 
-	return {
-		destroy() {
-			node.removeEventListener('mousedown', start);
-			node.removeEventListener('mouseleave', cancel);
-			node.removeEventListener('mouseup', end);
-			node.removeEventListener('touchstart', start);
-			node.removeEventListener('touchmove', cancel);
-			node.removeEventListener('touchend', end);
-		}
-	};
+  return {
+    destroy() {
+      node.removeEventListener('mousedown', start);
+      node.removeEventListener('mouseleave', cancel);
+      node.removeEventListener('mouseup', end);
+      node.removeEventListener('touchstart', start);
+      node.removeEventListener('touchmove', cancel);
+      node.removeEventListener('touchend', end);
+    }
+  };
 }
 
 onMount(() => {
