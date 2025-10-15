@@ -127,8 +127,7 @@ async function deleteDailiesForRecord(record: DbRecord) {
 		.delete();
 }
 
-// --- Загрузка данных + построение месячных блоков ---
-let monthlyBlocks: Record<string, Record<string, number>> = {};
+
 
 // Добавим тип для месячной записи, включающий lastUpdated
 type MonthlyRecord = {
@@ -137,7 +136,7 @@ type MonthlyRecord = {
   lastUpdated: Date;
 };
 
-let monthlyBlocks: Record<string, MonthlyRecord[]> = {}; // monthKey -> массив объектов
+- let monthlyBlocks: Record<string, Record<string, number>> = {};// monthKey -> массив объектов
 
 async function buildMonthlyBlocks() {
   if (!welderId) return;
