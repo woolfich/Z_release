@@ -454,7 +454,6 @@ onMount(() => {
 });
 </script>
 
-// <!-- Шаблон остаётся тот же, но теперь records отсортированы по lastUpdated -->
 <main>
 {#if welder}
 <h1>Карточка сварщика: {welder.name}</h1>
