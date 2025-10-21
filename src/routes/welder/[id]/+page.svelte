@@ -1,3 +1,9 @@
+<svelte:head>
+	<link rel="preconnect" href="https://fonts.googleapis.com  ">
+	<link rel="preconnect" href="https://fonts.gstatic.com  " crossorigin="anonymous">
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</svelte:head>
+
 <script lang="ts">
 import { onMount } from 'svelte';
 import { page } from '$app/stores';
@@ -161,7 +167,7 @@ async function distributeHours(article: string, totalHours: number, excludeMap: 
 		}
 	}
 
-	// ШАГ 2: Стандартное распределение остатка с сегодняшнего дня
+	// ШАГ 2: Стандартное распределение остатка с сегодняшего дня
 	let currentDate = new Date();
 	while (hoursLeft > 0.01) {
 		const dayString = getDateString(currentDate);
@@ -454,6 +460,7 @@ onMount(() => {
 });
 </script>
 
+<!-- Открывающий тег <main> должен быть на верхнем уровне, сразу после </script> -->
 <main>
 {#if welder}
 <h1>Карточка сварщика: {welder.name}</h1>
