@@ -14,21 +14,35 @@
         return num.toFixed(2).replace(/\.?0+$/, '');
     }
 
+    // --- ИЗМЕНЁННАЯ ФУНКЦИЯ ГРУППИРОВКИ ---
     function groupRecordsByMonth(records: Record[] | undefined) {
         if (!records || records.length === 0) {
             return new Map();
         }
+        // 1. Сортируем *все* записи по lastUpdated (новые сверху), если они еще не отсортированы
+        // (предполагается, что родитель уже отсортировал, но на всякий случай)
+        const sortedRecords = [...records].sort((a, b) => {
+            // Убедись, что lastUpdated определено, иначе используй date как fallback
+            const timeA = a.lastUpdated ? new Date(a.lastUpdated).getTime() : new Date(a.date).getTime();
+            const timeB = b.lastUpdated ? new Date(b.lastUpdated).getTime() : new Date(b.date).getTime();
+            return timeB - timeA; // Сортировка по убыванию (новые первыми)
+        });
+
         const grouped = new Map<string, Record[]>();
-        for (const record of records) {
+        for (const record of sortedRecords) {
             const date = new Date(record.date);
             const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             if (!grouped.has(monthKey)) {
                 grouped.set(monthKey, []);
             }
+            // 2. Так как records уже отсортированы по lastUpdated, просто добавляем их в массив месяца
+            // в порядке следования - порядок сохранится.
             grouped.get(monthKey)!.push(record);
         }
         return grouped;
     }
+    // --- КОНЕЦ ИЗМЕНЁННОЙ ФУНКЦИИ ---
+
 
     $: groupedRecords = groupRecordsByMonth(records);
 
@@ -98,7 +112,13 @@
                 >
                     <button class="article-button">{record.article}</button>
                     <span class="quantity">{formatQuantity(record.quantity)}{getUnitForRecord(record)}</span>
-                    <span class="date">{new Date(record.date).toLocaleDateString('ru-RU')}</span>
+                    <div class="date-info">
+                        <span class="date">{new Date(record.date).toLocaleDateString('ru-RU')}</span>
+                        <!-- Отображаем lastUpdated, если оно отличается от date -->
+                        {#if record.lastUpdated && new Date(record.lastUpdated).getTime() !== new Date(record.date).getTime()}
+                            <span class="updated-date">изм: {new Date(record.lastUpdated).toLocaleDateString('ru-RU')}</span>
+                        {/if}
+                    </div>
                 </div>
             {/each}
         </div>
@@ -164,8 +184,21 @@
         margin-right: 15px;
     }
 
+    .date-info {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 2px; /* Небольшой отступ между датами */
+    }
+
     .date {
         color: #999;
         font-size: 0.9em;
+    }
+
+    .updated-date {
+        color: #ff6b6b; /* Красный цвет для даты изменения */
+        font-size: 0.8em;
+        font-weight: 500;
     }
 </style>
