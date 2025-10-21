@@ -1,6 +1,9 @@
+Да, всё логически в одной функции `buildMonthlyBlocks`, но для отображения нужна небольшая правка в шаблоне. Вот исправленный вариант компонента, включающий только изменённый участок шаблона (в секции `<main>`) и добавленные стили:
+
+```svelte
 <svelte:head>
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+	<link rel="preconnect" href="https://fonts.googleapis.com  ">
+	<link rel="preconnect" href="https://fonts.gstatic.com  " crossorigin="anonymous">
 	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </svelte:head>
 
@@ -425,7 +428,7 @@ function longPress(node: HTMLElement, callback: () => void) {
 
   node.addEventListener('touchstart', start, { passive: true });
   node.addEventListener('touchmove', cancel);
-  node.addEventnder('touchend', end);
+  node.addEventListener('touchend', end);
 
   return {
     destroy() {
@@ -469,13 +472,16 @@ onMount(() => {
 			<h2 class="month-title">
 				{new Date(monthKey + '-01').toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}
 			</h2>
-			{#each Object.entries(monthlyBlocks[monthKey]).sort(([a], [b]) => a.localeCompare(b)) as [article, totalQty]}
+			{#each monthlyBlocks[monthKey] as { article, totalQty, lastUpdated } }
 				<div
 					class="record-row"
 					on:click|preventDefault={() => handleSelectArticleFromBlock(article)}
 					use:longPress={() => handleOpenModalForArticle(article)}
 				>
-					<span class="article">{article}</span>
+					<div class="article-info">
+						<span class="article">{article}</span>
+						<span class="updated-date">{lastUpdated.toLocaleDateString('ru-RU')}</span>
+					</div>
 					<span class="quantity">{totalQty.toFixed(2).replace(/\.?0+$/, '')} шт</span>
 				</div>
 			{/each}
@@ -568,6 +574,7 @@ onMount(() => {
 	.record-row {
 		display: flex;
 		justify-content: space-between;
+		align-items: center;
 		padding: 0.5rem 0;
 		border-bottom: 1px solid var(--border-color);
 		cursor: pointer;
@@ -591,6 +598,17 @@ onMount(() => {
 	.quantity {
 		color: var(--text-color);
 		font-weight: 500;
+	}
+
+	.article-info {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.updated-date {
+		font-size: 0.8rem;
+		color: var(--text-muted);
 	}
 
 	.bottom-nav {
@@ -641,3 +659,4 @@ onMount(() => {
 		transform: scale(1.1);
 	}
 </style>
+```
