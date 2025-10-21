@@ -478,7 +478,7 @@ onMount(() => {
 
 
 <RecordList
-  {records} <!-- Передаём отсортированные записи -->
+  {records} 
   {allPlans}
   on:selectArticle={handleSelectArticle}
   on:openModal={handleOpenModal}
