@@ -460,7 +460,7 @@ onMount(() => {
 });
 </script>
 
-<!-- Открывающий тег <main> должен быть на верхнем уровне, сразу после </script> -->
+
 <main>
 {#if welder}
 <h1>Карточка сварщика: {welder.name}</h1>
@@ -468,7 +468,7 @@ onMount(() => {
 <h1>Сварщик не найден</h1>
 {/if}
 
-<!-- Используем компонент формы -->
+
 <RecordForm
   {activePlans}
   bind:newArticle
@@ -476,7 +476,7 @@ onMount(() => {
   on:add={handleAdd}
 />
 
-<!-- Используем компонент списка -->
+
 <RecordList
   {records} <!-- Передаём отсортированные записи -->
   {allPlans}
@@ -484,7 +484,7 @@ onMount(() => {
   on:openModal={handleOpenModal}
 />
 
-<!-- Используем компонент модального окна -->
+
 <RecordModal
   bind:show={showModal}
   selectedRecord={selectedRecord}
@@ -494,7 +494,7 @@ onMount(() => {
   on:close={closeModal}
 />
 
-<!-- Фиксированная кнопка "домой ∆" -->
+
 <div class="bottom-nav">
 <a href="{base}/">домой ∆</a>
 </div>
